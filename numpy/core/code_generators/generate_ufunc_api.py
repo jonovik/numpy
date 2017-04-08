@@ -1,3 +1,5 @@
+from __future__ import division, print_function
+
 import os
 import genapi
 
@@ -9,11 +11,7 @@ from genapi import \
 h_template = r"""
 #ifdef _UMATHMODULE
 
-#ifdef NPY_ENABLE_SEPARATE_COMPILATION
 extern NPY_NO_EXPORT PyTypeObject PyUFunc_Type;
-#else
-NPY_NO_EXPORT PyTypeObject PyUFunc_Type;
-#endif
 
 %s
 
@@ -35,7 +33,7 @@ static void **PyUFunc_API=NULL;
 
 %s
 
-static int
+static NPY_INLINE int
 _import_umath(void)
 {
   PyObject *numpy = PyImport_ImportModule("numpy.core.umath");
@@ -75,14 +73,53 @@ _import_umath(void)
   return 0;
 }
 
-#define import_umath() { UFUNC_NOFPE if (_import_umath() < 0) {PyErr_Print(); PyErr_SetString(PyExc_ImportError, "numpy.core.umath failed to import"); return; }}
+#if PY_VERSION_HEX >= 0x03000000
+#define NUMPY_IMPORT_UMATH_RETVAL NULL
+#else
+#define NUMPY_IMPORT_UMATH_RETVAL
+#endif
 
-#define import_umath1(ret) { UFUNC_NOFPE if (_import_umath() < 0) {PyErr_Print(); PyErr_SetString(PyExc_ImportError, "numpy.core.umath failed to import"); return ret; }}
+#define import_umath() \
+    do {\
+        UFUNC_NOFPE\
+        if (_import_umath() < 0) {\
+            PyErr_Print();\
+            PyErr_SetString(PyExc_ImportError,\
+                    "numpy.core.umath failed to import");\
+            return NUMPY_IMPORT_UMATH_RETVAL;\
+        }\
+    } while(0)
 
-#define import_umath2(msg, ret) { UFUNC_NOFPE if (_import_umath() < 0) {PyErr_Print(); PyErr_SetString(PyExc_ImportError, msg); return ret; }}
+#define import_umath1(ret) \
+    do {\
+        UFUNC_NOFPE\
+        if (_import_umath() < 0) {\
+            PyErr_Print();\
+            PyErr_SetString(PyExc_ImportError,\
+                    "numpy.core.umath failed to import");\
+            return ret;\
+        }\
+    } while(0)
 
-#define import_ufunc() { UFUNC_NOFPE if (_import_umath() < 0) {PyErr_Print(); PyErr_SetString(PyExc_ImportError, "numpy.core.umath failed to import"); }}
+#define import_umath2(ret, msg) \
+    do {\
+        UFUNC_NOFPE\
+        if (_import_umath() < 0) {\
+            PyErr_Print();\
+            PyErr_SetString(PyExc_ImportError, msg);\
+            return ret;\
+        }\
+    } while(0)
 
+#define import_ufunc() \
+    do {\
+        UFUNC_NOFPE\
+        if (_import_umath() < 0) {\
+            PyErr_Print();\
+            PyErr_SetString(PyExc_ImportError,\
+                    "numpy.core.umath failed to import");\
+        }\
+    } while(0)
 
 #endif
 """
@@ -131,11 +168,13 @@ def do_generate_api(targets, sources):
     api_name = 'PyUFunc_API'
     for f in ufunc_api_list:
         name = f.name
-        index = ufunc_api_index[name]
-        ufunc_api_dict[name] = FunctionApi(f.name, index, f.return_type,
-                                           f.args, api_name)
+        index = ufunc_api_index[name][0]
+        annotations = ufunc_api_index[name][1:]
+        ufunc_api_dict[name] = FunctionApi(f.name, index, annotations,
+                                           f.return_type, f.args, api_name)
 
-    for name, index in numpy_api.ufunc_types_api.items():
+    for name, val in numpy_api.ufunc_types_api.items():
+        index = val[0]
         ufunc_api_dict[name] = TypeApi(name, index, 'PyTypeObject', api_name)
 
     # set up object API
@@ -165,7 +204,7 @@ def do_generate_api(targets, sources):
     fid = open(doc_file, 'w')
     fid.write('''
 =================
-Numpy Ufunc C-API
+NumPy Ufunc C-API
 =================
 ''')
     for func in ufunc_api_list:

@@ -1,4 +1,4 @@
-.. sectionauthor:: adapted from "Guide to Numpy" by Travis E. Oliphant
+.. sectionauthor:: adapted from "Guide to NumPy" by Travis E. Oliphant
 
 .. _ufuncs:
 
@@ -20,7 +20,7 @@ is, a ufunc is a ":term:`vectorized`" wrapper for a function that
 takes a fixed number of scalar inputs and produces a fixed number of
 scalar outputs.
 
-In Numpy, universal functions are instances of the
+In NumPy, universal functions are instances of the
 :class:`numpy.ufunc` class. Many of the built-in functions are
 implemented in compiled C code, but :class:`ufunc` instances can also
 be produced using the :func:`frompyfunc` factory function.
@@ -103,24 +103,24 @@ Output type determination
 The output of the ufunc (and its methods) is not necessarily an
 :class:`ndarray`, if all input arguments are not :class:`ndarrays <ndarray>`.
 
-All output arrays will be passed to the :obj:`__array_prepare__` and
-:obj:`__array_wrap__` methods of the input (besides
+All output arrays will be passed to the :obj:`~class.__array_prepare__` and
+:obj:`~class.__array_wrap__` methods of the input (besides
 :class:`ndarrays <ndarray>`, and scalars) that defines it **and** has
-the highest :obj:`__array_priority__` of any other input to the
-universal function. The default :obj:`__array_priority__` of the
-ndarray is 0.0, and the default :obj:`__array_priority__` of a subtype
-is 1.0. Matrices have :obj:`__array_priority__` equal to 10.0.
+the highest :obj:`~class.__array_priority__` of any other input to the
+universal function. The default :obj:`~class.__array_priority__` of the
+ndarray is 0.0, and the default :obj:`~class.__array_priority__` of a subtype
+is 1.0. Matrices have :obj:`~class.__array_priority__` equal to 10.0.
 
 All ufuncs can also take output arguments. If necessary, output will
 be cast to the data-type(s) of the provided output array(s). If a class
-with an :obj:`__array__` method is used for the output, results will be
-written to the object returned by :obj:`__array__`. Then, if the class
-also has an :obj:`__array_prepare__` method, it is called so metadata
+with an :obj:`~class.__array__` method is used for the output, results will be
+written to the object returned by :obj:`~class.__array__`. Then, if the class
+also has an :obj:`~class.__array_prepare__` method, it is called so metadata
 may be determined based on the context of the ufunc (the context
 consisting of the ufunc itself, the arguments passed to the ufunc, and
 the ufunc domain.) The array object returned by
-:obj:`__array_prepare__` is passed to the ufunc for computation.
-Finally, if the class also has an :obj:`__array_wrap__` method, the returned
+:obj:`~class.__array_prepare__` is passed to the ufunc for computation.
+Finally, if the class also has an :obj:`~class.__array_wrap__` method, the returned
 :class:`ndarray` result will be passed to that method just before
 passing control back to the caller.
 
@@ -173,6 +173,13 @@ Casting Rules
 
 .. index::
    pair: ufunc; casting rules
+
+.. note::
+
+   In NumPy 1.6.0, a type promotion API was created to encapsulate the
+   mechansim for determining output types. See the functions
+   :func:`result_type`, :func:`promote_types`, and
+   :func:`min_scalar_type` for more details.
 
 At the core of every ufunc is a one-dimensional strided loop that
 implements the actual function for a specific type combination. When a
@@ -268,19 +275,92 @@ whether the precision of the scalar constant will cause upcasting on
 your large (small precision) array.
 
 
+Overriding Ufunc behavior
+=========================
+
+Classes (including ndarray subclasses) can override how ufuncs act on
+them by defining certain special methods.  For details, see
+:ref:`arrays.classes`.
+
+
 :class:`ufunc`
 ==============
 
 Optional keyword arguments
 --------------------------
 
-All ufuncs take optional keyword arguments. These represent rather
-advanced usage and will not typically be used by most Numpy users.
+All ufuncs take optional keyword arguments. Most of these represent
+advanced usage and will not typically be used.
 
 .. index::
    pair: ufunc; keyword arguments
 
-*sig*
+*out*
+
+    .. versionadded:: 1.6
+
+    The first output can be provided as either a positional or a keyword
+    parameter. Keyword 'out' arguments are incompatible with positional
+    ones.
+
+    .. versionadded:: 1.10
+
+    The 'out' keyword argument is expected to be a tuple with one entry per
+    output (which can be `None` for arrays to be allocated by the ufunc).
+    For ufuncs with a single output, passing a single array (instead of a
+    tuple holding a single array) is also valid.
+
+    Passing a single array in the 'out' keyword argument to a ufunc with
+    multiple outputs is deprecated, and will raise a warning in numpy 1.10,
+    and an error in a future release.
+
+*where*
+
+    .. versionadded:: 1.7
+
+    Accepts a boolean array which is broadcast together with the operands.
+    Values of True indicate to calculate the ufunc at that position, values
+    of False indicate to leave the value in the output alone.
+
+*casting*
+
+    .. versionadded:: 1.6
+
+    May be 'no', 'equiv', 'safe', 'same_kind', or 'unsafe'.
+    See :func:`can_cast` for explanations of the parameter values.
+
+    Provides a policy for what kind of casting is permitted. For compatibility
+    with previous versions of NumPy, this defaults to 'unsafe' for numpy < 1.7.
+    In numpy 1.7 a transition to 'same_kind' was begun where ufuncs produce a
+    DeprecationWarning for calls which are allowed under the 'unsafe'
+    rules, but not under the 'same_kind' rules. From numpy 1.10 and
+    onwards, the default is 'same_kind'.
+
+*order*
+
+    .. versionadded:: 1.6
+
+    Specifies the calculation iteration order/memory layout of the output array.
+    Defaults to 'K'. 'C' means the output should be C-contiguous, 'F' means
+    F-contiguous, 'A' means F-contiguous if the inputs are F-contiguous and
+    not also not C-contiguous, C-contiguous otherwise, and 'K' means to match
+    the element ordering of the inputs as closely as possible.
+
+*dtype*
+
+    .. versionadded:: 1.6
+
+    Overrides the dtype of the calculation and output arrays. Similar to
+    *signature*.
+
+*subok*
+
+    .. versionadded:: 1.6
+
+    Defaults to true. If set to false, the output will always be a strict
+    array, not a subtype.
+
+*signature*
 
     Either a data-type, a tuple of data-types, or a special signature
     string indicating the input and output types of a ufunc. This argument
@@ -291,7 +371,9 @@ advanced usage and will not typically be used by most Numpy users.
     available and searching for a loop with data-types to which all inputs
     can be cast safely. This keyword argument lets you bypass that
     search and choose a particular loop. A list of available signatures is
-    provided by the **types** attribute of the ufunc object.
+    provided by the **types** attribute of the ufunc object. For backwards
+    compatibility this argument can also be provided as *sig*, although
+    the long form is preferred.
 
 *extobj*
 
@@ -302,6 +384,7 @@ advanced usage and will not typically be used by most Numpy users.
     provided for the error mode. This may be useful, for example, as an
     optimization for calculations requiring many ufunc calls on small arrays
     in a loop.
+
 
 
 Attributes
@@ -358,6 +441,12 @@ an integer (or Boolean) data-type and smaller than the size of the
 :class:`int_` data type, it will be internally upcast to the :class:`int_`
 (or :class:`uint`) data-type.
 
+Ufuncs also have a fifth method that allows in place operations to be
+performed using fancy indexing. No buffering is used on the dimensions where
+fancy indexing is used, so the fancy index can list an item more than once and
+the operation will be performed on the result of the previous operation for
+that item.
+
 .. index::
    pair: ufunc; methods
 
@@ -368,6 +457,7 @@ an integer (or Boolean) data-type and smaller than the size of the
    ufunc.accumulate
    ufunc.reduceat
    ufunc.outer
+   ufunc.at
 
 
 .. warning::
@@ -418,8 +508,10 @@ Math operations
     mod
     fmod
     absolute
+    fabs
     rint
     sign
+    heaviside
     conj
     exp
     exp2
@@ -430,8 +522,8 @@ Math operations
     log1p
     sqrt
     square
+    cbrt
     reciprocal
-    ones_like
 
 .. tip::
 
@@ -545,6 +637,10 @@ Comparison functions
     ``a > b`` and uses it to return either `a` or `b` (as a whole). A similar
     difference exists between ``minimum(a, b)`` and ``min(a, b)``.
 
+.. autosummary::
+
+    fmax
+    fmin
 
 Floating functions
 ------------------
@@ -555,14 +651,14 @@ single operation.
 
 .. autosummary::
 
-    isreal
-    iscomplex
     isfinite
     isinf
     isnan
+    fabs
     signbit
     copysign
     nextafter
+    spacing
     modf
     ldexp
     frexp

@@ -1,7 +1,7 @@
 .. _using-git:
 
 Working with *NumPy* source code
-======================================
+================================
 
 Contents:
 
@@ -10,8 +10,5 @@ Contents:
 
    git_intro
    following_latest
-   patching
    git_development
    git_resources
-
-

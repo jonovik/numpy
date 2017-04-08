@@ -45,8 +45,8 @@ objects implementing the :class:`buffer` or :ref:`array
 
    The array can be indexed using Python container-like syntax:
 
-   >>> x[1,2] # i.e., the element of x in the *second* row, *third*
-   column, namely, 6.
+   >>> # The element of x in the *second* row, *third* column, namely, 6.
+   >>> x[1, 2]
 
    For example :ref:`slicing <arrays.indexing>` can produce views of
    the array:
@@ -82,7 +82,7 @@ Indexing arrays
 
 Arrays can be indexed using an extended Python slicing syntax,
 ``array[selection]``.  Similar syntax is also used for accessing
-fields in a :ref:`record array <arrays.dtypes>`.
+fields in a :ref:`structured array <arrays.dtypes.field>`.
 
 .. seealso:: :ref:`Array Indexing <arrays.indexing>`.
 
@@ -103,7 +103,7 @@ the bytes are interpreted is defined by the :ref:`data-type object
 
 A segment of memory is inherently 1-dimensional, and there are many
 different schemes for arranging the items of an *N*-dimensional array
-in a 1-dimensional block. Numpy is flexible, and :class:`ndarray`
+in a 1-dimensional block. NumPy is flexible, and :class:`ndarray`
 objects can accommodate any *strided indexing scheme*. In a strided
 scheme, the N-dimensional index :math:`(n_0, n_1, ..., n_{N-1})`
 corresponds to the offset (in bytes):
@@ -115,20 +115,60 @@ array. Here, :math:`s_k` are integers which specify the :obj:`strides
 <ndarray.strides>` of the array. The :term:`column-major` order (used,
 for example, in the Fortran language and in *Matlab*) and
 :term:`row-major` order (used in C) schemes are just specific kinds of
-strided scheme, and correspond to the strides:
+strided scheme, and correspond to memory that can be *addressed* by the strides:
 
 .. math::
 
-   s_k^{\mathrm{column}} = \prod_{j=0}^{k-1} d_j ,
-   \quad  s_k^{\mathrm{row}} = \prod_{j=k+1}^{N-1} d_j .
+   s_k^{\mathrm{column}} = \mathrm{itemsize} \prod_{j=0}^{k-1} d_j ,
+   \quad  s_k^{\mathrm{row}} = \mathrm{itemsize} \prod_{j=k+1}^{N-1} d_j .
 
 .. index:: single-segment, contiguous, non-contiguous
 
-where :math:`d_j` = `self.itemsize * self.shape[j]`.
+where :math:`d_j` `= self.shape[j]`.
 
 Both the C and Fortran orders are :term:`contiguous`, *i.e.,*
 :term:`single-segment`, memory layouts, in which every part of the
 memory block can be accessed by some combination of the indices.
+
+While a C-style and Fortran-style contiguous array, which has the corresponding
+flags set, can be addressed with the above strides, the actual strides may be
+different. This can happen in two cases:
+
+    1. If ``self.shape[k] == 1`` then for any legal index ``index[k] == 0``.
+       This means that in the formula for the offset :math:`n_k = 0` and thus
+       :math:`s_k n_k = 0` and the value of :math:`s_k` `= self.strides[k]` is
+       arbitrary.
+    2. If an array has no elements (``self.size == 0``) there is no legal
+       index and the strides are never used. Any array with no elements may be
+       considered C-style and Fortran-style contiguous.
+
+Point 1. means that ``self`` and ``self.squeeze()`` always have the same
+contiguity and :term:`aligned` flags value. This also means that even a high
+dimensional array could be C-style and Fortran-style contiguous at the same
+time.
+
+.. index:: aligned
+
+An array is considered aligned if the memory offsets for all elements and the
+base offset itself is a multiple of `self.itemsize`.
+
+.. note::
+
+    Points (1) and (2) are not yet applied by default. Beginning with
+    NumPy 1.8.0, they are applied consistently only if the environment
+    variable ``NPY_RELAXED_STRIDES_CHECKING=1`` was defined when NumPy
+    was built. Eventually this will become the default.
+
+    You can check whether this option was enabled when your NumPy was
+    built by looking at the value of ``np.ones((10,1),
+    order='C').flags.f_contiguous``. If this is ``True``, then your
+    NumPy has relaxed strides checking enabled.
+
+.. warning::
+
+    It does *not* generally hold that ``self.strides[-1] == self.itemsize``
+    for C-style contiguous arrays or ``self.strides[0] == self.itemsize`` for
+    Fortran-style contiguous arrays is true.
 
 Data in new :class:`ndarrays <ndarray>` is in the :term:`row-major`
 (C) order, unless otherwise specified, but, for example, :ref:`basic
@@ -143,7 +183,6 @@ in a different scheme.
    However, some algorithms require single-segment arrays. When an
    irregularly strided array is passed in to such algorithms, a copy
    is automatically made.
-
 
 .. _arrays.ndarray.attributes:
 
@@ -200,7 +239,6 @@ Other attributes
    ndarray.imag
    ndarray.flat
    ndarray.ctypes
-   __array_priority__
 
 
 .. _arrays.ndarray.array-interface:
@@ -235,15 +273,15 @@ more complete description.)
 
 For the following methods there are also corresponding functions in
 :mod:`numpy`: :func:`all`, :func:`any`, :func:`argmax`,
-:func:`argmin`, :func:`argsort`, :func:`choose`, :func:`clip`,
-:func:`compress`, :func:`copy`, :func:`cumprod`, :func:`cumsum`,
-:func:`diagonal`, :func:`imag`, :func:`max <amax>`, :func:`mean`,
-:func:`min <amin>`, :func:`nonzero`, :func:`prod`, :func:`ptp`,
-:func:`put`, :func:`ravel`, :func:`real`, :func:`repeat`,
-:func:`reshape`, :func:`round <around>`, :func:`searchsorted`,
-:func:`sort`, :func:`squeeze`, :func:`std`, :func:`sum`,
-:func:`swapaxes`, :func:`take`, :func:`trace`, :func:`transpose`,
-:func:`var`.
+:func:`argmin`, :func:`argpartition`, :func:`argsort`, :func:`choose`,
+:func:`clip`, :func:`compress`, :func:`copy`, :func:`cumprod`,
+:func:`cumsum`, :func:`diagonal`, :func:`imag`, :func:`max <amax>`,
+:func:`mean`, :func:`min <amin>`, :func:`nonzero`, :func:`partition`,
+:func:`prod`, :func:`ptp`, :func:`put`, :func:`ravel`, :func:`real`,
+:func:`repeat`, :func:`reshape`, :func:`round <around>`,
+:func:`searchsorted`, :func:`sort`, :func:`squeeze`, :func:`std`,
+:func:`sum`, :func:`swapaxes`, :func:`take`, :func:`trace`,
+:func:`transpose`, :func:`var`.
 
 Array conversion
 ----------------
@@ -254,8 +292,8 @@ Array conversion
    ndarray.item
    ndarray.tolist
    ndarray.itemset
-   ndarray.setasflat
    ndarray.tostring
+   ndarray.tobytes
    ndarray.tofile
    ndarray.dump
    ndarray.dumps
@@ -301,6 +339,8 @@ the operation should proceed.
    ndarray.choose
    ndarray.sort
    ndarray.argsort
+   ndarray.partition
+   ndarray.argpartition
    ndarray.searchsorted
    ndarray.nonzero
    ndarray.compress
@@ -387,10 +427,10 @@ be performed.
    ndarray.all
    ndarray.any
 
-Arithmetic and comparison operations
-====================================
+Arithmetic, matrix multiplication, and comparison operations
+============================================================
 
-.. index:: comparison, arithmetic, operation, operator
+.. index:: comparison, arithmetic, matrix, operation, operator
 
 Arithmetic and comparison operations on :class:`ndarrays <ndarray>`
 are defined as element-wise operations, and generally yield
@@ -400,7 +440,7 @@ Each of the arithmetic operations (``+``, ``-``, ``*``, ``/``, ``//``,
 ``%``, ``divmod()``, ``**`` or ``pow()``, ``<<``, ``>>``, ``&``,
 ``^``, ``|``, ``~``) and the comparisons (``==``, ``<``, ``>``,
 ``<=``, ``>=``, ``!=``) is equivalent to the corresponding
-:term:`universal function` (or :term:`ufunc` for short) in Numpy.  For
+:term:`universal function` (or :term:`ufunc` for short) in NumPy.  For
 more information, see the section on :ref:`Universal Functions
 <ufuncs>`.
 
@@ -427,7 +467,7 @@ Truth value of an array (:func:`bool()`):
 
    Truth-value testing of an array invokes
    :meth:`ndarray.__nonzero__`, which raises an error if the number of
-   elements in the the array is larger than 1, because the truth value
+   elements in the array is larger than 1, because the truth value
    of such arrays is ambiguous. Use :meth:`.any() <ndarray.any>` and
    :meth:`.all() <ndarray.all>` instead to be clear about what is meant
    in such cases. (If the number of elements is 0, the array evaluates
@@ -510,6 +550,20 @@ Arithmetic, in-place:
    casts the result to fit back in ``a``, whereas ``a = a + 3j``
    re-binds the name ``a`` to the result.
 
+Matrix Multiplication:
+
+.. autosummary::
+   :toctree: generated/
+
+   ndarray.__matmul__
+
+.. note::
+
+   Matrix operators ``@`` and ``@=`` were introduced in Python 3.5
+   following PEP465. NumPy 1.10.0 has a preliminary implementation of ``@``
+   for testing purposes. Further documentation can be found in the
+   :func:`matmul` documentation.
+
 
 Special methods
 ===============
@@ -541,8 +595,6 @@ Container customization: (see :ref:`Indexing <arrays.indexing>`)
    ndarray.__len__
    ndarray.__getitem__
    ndarray.__setitem__
-   ndarray.__getslice__
-   ndarray.__setslice__
    ndarray.__contains__
 
 Conversion; the operations :func:`complex()`, :func:`int()`,

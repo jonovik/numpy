@@ -18,14 +18,13 @@ as follows::
     paver bootstrap && source bootstrap/bin/activate
     # Installing numpy is necessary to build the correct documentation (because
     # of autodoc)
-    python setupegg.py install
+    python setup.py install
     paver dmg
 
 Building a simple (no-superpack) windows installer from wine
 ============================================================
 
-It assumes that blas/lapack are in c:\local\lib inside drive_c. Build python
-2.5 and python 2.6 installers.
+It assumes that blas/lapack are in c:\local\lib inside drive_c.
 
     paver bdist_wininst_simple
 
@@ -55,6 +54,7 @@ TODO
     - fix bdist_mpkg: we build the same source twice -> how to make sure we use
       the same underlying python for egg install in venv and for bdist_mpkg
 """
+from __future__ import division, print_function
 
 # What need to be installed to build everything on mac os x:
 #   - wine: python 2.6 and 2.5 + makensis + cpuid plugin + mingw, all in the PATH
@@ -67,6 +67,7 @@ import subprocess
 import re
 try:
     from hashlib import md5
+    from hashlib import sha256
 except ImportError:
     from md5 import md5
 
@@ -77,18 +78,46 @@ from paver.easy import \
 sys.path.insert(0, os.path.dirname(__file__))
 try:
     setup_py = __import__("setup")
-    FULLVERSION = setup_py.FULLVERSION
+    FULLVERSION = setup_py.VERSION
+    # This is duplicated from setup.py
+    if os.path.exists('.git'):
+        GIT_REVISION = setup_py.git_version()
+    elif os.path.exists('numpy/version.py'):
+        # must be a source distribution, use existing version file
+        from numpy.version import git_revision as GIT_REVISION
+    else:
+        GIT_REVISION = "Unknown"
+
+    if not setup_py.ISRELEASED:
+        FULLVERSION += '.dev0+' + GIT_REVISION[:7]
 finally:
     sys.path.pop(0)
 
-DEFAULT_PYTHON = "2.6"
+
+#-----------------------------------
+# Things to be changed for a release
+#-----------------------------------
+
+# Source of the release notes
+RELEASE_NOTES = 'doc/release/1.13.0-notes.rst'
+
+# Start/end of the log (from git)
+LOG_START = 'maintenance/1.12.x'
+LOG_END = 'master'
+
+
+#-------------------------------------------------------
+# Hardcoded build/install dirs, virtualenv options, etc.
+#-------------------------------------------------------
+DEFAULT_PYTHON = "2.7"
 
 # Where to put the final installers, as put on sourceforge
 SUPERPACK_BUILD = 'build-superpack'
 SUPERPACK_BINDIR = os.path.join(SUPERPACK_BUILD, 'binaries')
 
 options(bootstrap=Bunch(bootstrap_dir="bootstrap"),
-        virtualenv=Bunch(packages_to_install=["sphinx", "numpydoc"], no_site_packages=True),
+        virtualenv=Bunch(packages_to_install=["sphinx==1.1.3", "numpydoc"],
+                         no_site_packages=False),
         sphinx=Bunch(builddir="build", sourcedir="source", docroot='doc'),
         superpack=Bunch(builddir="build-superpack"),
         installers=Bunch(releasedir="release",
@@ -105,34 +134,31 @@ options(bootstrap=Bunch(bootstrap_dir="bootstrap"),
 )
 
 MPKG_PYTHON = {
-        "2.5": ["/Library/Frameworks/Python.framework/Versions/2.5/bin/python"],
         "2.6": ["/Library/Frameworks/Python.framework/Versions/2.6/bin/python"],
         "2.7": ["/Library/Frameworks/Python.framework/Versions/2.7/bin/python"],
-        "3.1": ["/Library/Frameworks/Python.framework/Versions/3.1/bin/python3"],
+        "3.2": ["/Library/Frameworks/Python.framework/Versions/3.2/bin/python3"],
+        "3.3": ["/Library/Frameworks/Python.framework/Versions/3.3/bin/python3"],
+        "3.4": ["/Library/Frameworks/Python.framework/Versions/3.4/bin/python3"],
 }
 
-SSE3_CFG = {'ATLAS': r'C:\local\lib\yop\sse3'}
-SSE2_CFG = {'ATLAS': r'C:\local\lib\yop\sse2'}
-NOSSE_CFG = {'BLAS': r'C:\local\lib\yop\nosse', 'LAPACK': r'C:\local\lib\yop\nosse'}
+SSE3_CFG = {'ATLAS': r'C:\local\lib\atlas\sse3'}
+SSE2_CFG = {'ATLAS': r'C:\local\lib\atlas\sse2'}
+NOSSE_CFG = {'BLAS': r'C:\local\lib\atlas\nosse', 'LAPACK': r'C:\local\lib\atlas\nosse'}
 
 SITECFG = {"sse2" : SSE2_CFG, "sse3" : SSE3_CFG, "nosse" : NOSSE_CFG}
 
 if sys.platform =="darwin":
     WINDOWS_PYTHON = {
-        "3.1": ["wine", os.environ['HOME'] + "/.wine/drive_c/Python31/python.exe"],
+        "3.4": ["wine", os.environ['HOME'] + "/.wine/drive_c/Python34/python.exe"],
         "2.7": ["wine", os.environ['HOME'] + "/.wine/drive_c/Python27/python.exe"],
-        "2.6": ["wine", os.environ['HOME'] + "/.wine/drive_c/Python26/python.exe"],
-        "2.5": ["wine", os.environ['HOME'] + "/.wine/drive_c/Python25/python.exe"]
     }
     WINDOWS_ENV = os.environ
     WINDOWS_ENV["DYLD_FALLBACK_LIBRARY_PATH"] = "/usr/X11/lib:/usr/lib"
     MAKENSIS = ["wine", "makensis"]
 elif sys.platform == "win32":
     WINDOWS_PYTHON = {
-        "3.1": ["C:\Python31\python3.exe"],
+        "3.4": ["C:\Python34\python.exe"],
         "2.7": ["C:\Python27\python.exe"],
-        "2.6": ["C:\Python26\python.exe"],
-        "2.5": ["C:\Python25\python.exe"],
     }
     # XXX: find out which env variable is necessary to avoid the pb with python
     # 2.6 and random module when importing tempfile
@@ -140,18 +166,12 @@ elif sys.platform == "win32":
     MAKENSIS = ["makensis"]
 else:
     WINDOWS_PYTHON = {
-        "3.1": ["wine", os.environ['HOME'] + "/.wine/drive_c/Python31/python.exe"],
+        "3.4": ["wine", os.environ['HOME'] + "/.wine/drive_c/Python34/python.exe"],
         "2.7": ["wine", os.environ['HOME'] + "/.wine/drive_c/Python27/python.exe"],
-        "2.6": ["wine", os.environ['HOME'] + "/.wine/drive_c/Python26/python.exe"],
-        "2.5": ["wine", os.environ['HOME'] + "/.wine/drive_c/Python25/python.exe"]
     }
     WINDOWS_ENV = os.environ
     MAKENSIS = ["wine", "makensis"]
 
-# Start/end of the log (from git)
-LOG_START = 'svn/tags/1.4.0'
-LOG_END = 'master'
-RELEASE_NOTES = 'doc/release/1.5.0-notes.rst'
 
 #-------------------
 # Windows installers
@@ -202,16 +222,21 @@ def bdist_superpack(options):
     pyver = options.python_version
     def copy_bdist(arch):
         # Copy the wininst in dist into the release directory
-        if int(pyver[0]) >= 3:
-            source = os.path.join('build', 'py3k', 'dist', wininst_name(pyver))
-        else:
-            source = os.path.join('dist', wininst_name(pyver))
+        source = os.path.join('dist', wininst_name(pyver))
         target = os.path.join(SUPERPACK_BINDIR, internal_wininst_name(arch))
         if os.path.exists(target):
             os.remove(target)
         if not os.path.exists(os.path.dirname(target)):
             os.makedirs(os.path.dirname(target))
-        os.rename(source, target)
+        try:
+            os.rename(source, target)
+        except OSError:
+            # When git is installed on OS X but not under Wine, the name of the
+            # .exe has "-Unknown" in it instead of the correct git revision.
+            # Try to fix this here:
+            revidx = source.index(".dev-") + 5
+            gitrev = source[revidx:revidx+7]
+            os.rename(source.replace(gitrev, "Unknown"), target)
 
     bdist_wininst_arch(pyver, 'nosse')
     copy_bdist("nosse")
@@ -276,7 +301,7 @@ def bootstrap(options):
     """create virtualenv in ./bootstrap"""
     try:
         import virtualenv
-    except ImportError, e:
+    except ImportError as e:
         raise RuntimeError("virtualenv is needed for bootstrap")
 
     bdir = options.bootstrap_dir
@@ -362,8 +387,22 @@ def pdf():
 #------------------
 # Mac OS X targets
 #------------------
-def dmg_name(fullversion, pyver):
-    return "numpy-%s-py%s-python.org.dmg" % (fullversion, pyver)
+def dmg_name(fullversion, pyver, osxver=None):
+    """Return name for dmg installer.
+
+    Notes
+    -----
+    Python 2.7 has two binaries, one for 10.3 (ppc, i386) and one for 10.6
+    (i386, x86_64). All other Python versions at python.org at the moment
+    have binaries for 10.3 only. The "macosx%s" part of the dmg name should
+    correspond to the python.org naming scheme.
+    """
+    # assume that for the py2.7/osx10.6 build the deployment target is set
+    # (should be done in the release script).
+    if not osxver:
+        osxver = os.environ.get('MACOSX_DEPLOYMENT_TARGET', '10.3')
+    return "numpy-%s-py%s-python.org-macosx%s.dmg" % (fullversion, pyver,
+                                                      osxver)
 
 def macosx_version():
     if not sys.platform == 'darwin':
@@ -378,15 +417,21 @@ def macosx_version():
 
 def mpkg_name(pyver):
     maj, min = macosx_version()[:2]
+    # Note that bdist_mpkg breaks this if building a dev version with a git
+    # commit string attached. make_fullplatcomponents() in
+    # bdist_mpkg/cmd_bdist_mpkg.py replaces '-' with '_', comment this out if
+    # needed.
     return "numpy-%s-py%s-macosx%s.%s.mpkg" % (FULLVERSION, pyver, maj, min)
 
 def _build_mpkg(pyver):
-    ldflags = "-undefined dynamic_lookup -bundle -arch i386 -arch ppc -Wl,-search_paths_first"
-    ldflags += " -L%s" % os.path.join(os.path.dirname(__file__), "build")
-    if pyver == "2.5":
-        sh("CC=gcc-4.0 LDFLAGS='%s' %s setupegg.py bdist_mpkg" % (ldflags, " ".join(MPKG_PYTHON[pyver])))
+    # account for differences between Python 2.7.1 versions from python.org
+    if os.environ.get('MACOSX_DEPLOYMENT_TARGET', None) == "10.6":
+        ldflags = "-undefined dynamic_lookup -bundle -arch i386 -arch x86_64 -Wl,-search_paths_first"
     else:
-        sh("LDFLAGS='%s' %s setupegg.py bdist_mpkg" % (ldflags, " ".join(MPKG_PYTHON[pyver])))
+        ldflags = "-undefined dynamic_lookup -bundle -arch i386 -arch ppc -Wl,-search_paths_first"
+
+    ldflags += " -L%s" % os.path.join(os.path.dirname(__file__), "build")
+    sh("LDFLAGS='%s' %s setup.py bdist_mpkg" % (ldflags, " ".join(MPKG_PYTHON[pyver])))
 
 @task
 def simple_dmg():
@@ -428,7 +473,6 @@ def _create_dmg(pyver, src_dir, volname=None):
     sh(" ".join(cmd))
 
 @task
-@needs("pdf")
 @cmdopts([("python-version=", "p", "python version")])
 def dmg(options):
     try:
@@ -437,11 +481,18 @@ def dmg(options):
         pyver = DEFAULT_PYTHON
     idirs = options.installers.installersdir
 
+    # Check if docs exist. If not, say so and quit.
+    ref = os.path.join(options.doc.destdir_pdf, "reference.pdf")
+    user = os.path.join(options.doc.destdir_pdf, "userguide.pdf")
+    if (not os.path.exists(ref)) or (not os.path.exists(user)):
+        import warnings
+        warnings.warn("Docs need to be built first! Can't find them.", stacklevel=2)
+
+    # Build the mpkg package
     call_task("clean")
     _build_mpkg(pyver)
 
     macosx_installer_dir = "tools/numpy-macosx-installer"
-
     dmg = os.path.join(macosx_installer_dir, dmg_name(FULLVERSION, pyver))
     if os.path.exists(dmg):
         os.remove(dmg)
@@ -462,10 +513,7 @@ def dmg(options):
     if os.path.exists(pdf_docs):
         shutil.rmtree(pdf_docs)
     os.makedirs(pdf_docs)
-
-    user = os.path.join(options.doc.destdir_pdf, "userguide.pdf")
     shutil.copy(user, os.path.join(pdf_docs, "userguide.pdf"))
-    ref = os.path.join(options.doc.destdir_pdf, "reference.pdf")
     shutil.copy(ref, os.path.join(pdf_docs, "reference.pdf"))
 
     # Build the dmg
@@ -492,8 +540,16 @@ def tarball_name(type='gztar'):
 
 @task
 def sdist(options):
+    # First clean the repo and update submodules (for up-to-date doc html theme
+    # and Sphinx extensions)
+    sh('git clean -xdf')
+    sh('git submodule init')
+    sh('git submodule update')
+
     # To be sure to bypass paver when building sdist... paver + numpy.distutils
     # do not play well together.
+    # Cython is run over all Cython files in setup.py, so generated C files
+    # will be included.
     sh('python setup.py sdist --formats=gztar,zip')
 
     # Copy the superpack into installers dir
@@ -509,47 +565,91 @@ def sdist(options):
 def compute_md5(idirs):
     released = paver.path.path(idirs).listdir()
     checksums = []
-    for f in released:
+    for f in sorted(released):
         m = md5(open(f, 'r').read())
-        checksums.append('%s  %s' % (m.hexdigest(), f))
+        checksums.append('%s  %s' % (m.hexdigest(), os.path.basename(f)))
 
     return checksums
 
-def write_release_task(options, filename='NOTES.txt'):
+def compute_sha256(idirs):
+    # better checksum so gpg signed README.txt containing the sums can be used
+    # to verify the binaries instead of signing all binaries
+    released = paver.path.path(idirs).listdir()
+    checksums = []
+    for f in sorted(released):
+        m = sha256(open(f, 'r').read())
+        checksums.append('%s  %s' % (m.hexdigest(), os.path.basename(f)))
+
+    return checksums
+
+def write_release_task(options, filename='README'):
     idirs = options.installers.installersdir
     source = paver.path.path(RELEASE_NOTES)
     target = paver.path.path(filename)
     if target.exists():
         target.remove()
-    source.copy(target)
-    ftarget = open(str(target), 'a')
-    ftarget.writelines("""
+
+    tmp_target = paver.path.path(filename + '.md')
+    source.copy(tmp_target)
+
+    with open(str(tmp_target), 'a') as ftarget:
+        ftarget.writelines("""
 Checksums
 =========
 
+MD5
+---
+
 """)
-    ftarget.writelines(['%s\n' % c for c in compute_md5(idirs)])
+        ftarget.writelines(['    %s\n' % c for c in compute_md5(idirs)])
+        ftarget.writelines("""
+SHA256
+------
+
+""")
+        ftarget.writelines(['    %s\n' % c for c in compute_sha256(idirs)])
+
+    # Sign release
+    cmd = ['gpg', '--clearsign', '--armor']
+    if hasattr(options, 'gpg_key'):
+        cmd += ['--default-key', options.gpg_key]
+    cmd += ['--output', str(target), str(tmp_target)]
+    subprocess.check_call(cmd)
+    print("signed %s" % (target,))
+
+    # Change PR links for github posting, don't sign this
+    # as the signing isn't markdown compatible.
+    with open(str(tmp_target), 'r') as ftarget:
+        mdtext = ftarget.read()
+        mdtext = re.sub(r'^\* `(\#[0-9]*).*?`__', r'* \1', mdtext, flags=re.M)
+    with open(str(tmp_target), 'w') as ftarget:
+        ftarget.write(mdtext)
+
 
 def write_log_task(options, filename='Changelog'):
     st = subprocess.Popen(
-            ['git', 'svn', 'log',  '%s..%s' % (LOG_START, LOG_END)],
-            stdout=subprocess.PIPE)
+        ['git', 'log', '--no-merges', '--use-mailmap',
+         '%s..%s' % (LOG_START, LOG_END)],
+        stdout=subprocess.PIPE)
 
     out = st.communicate()[0]
     a = open(filename, 'w')
     a.writelines(out)
     a.close()
 
+
 @task
 def write_release(options):
     write_release_task(options)
+
 
 @task
 def write_log(options):
     write_log_task(options)
 
+
 @task
 def write_release_and_log(options):
     rdir = options.installers.releasedir
-    write_release_task(options, os.path.join(rdir, 'NOTES.txt'))
+    write_release_task(options, os.path.join(rdir, 'README'))
     write_log_task(options, os.path.join(rdir, 'Changelog'))

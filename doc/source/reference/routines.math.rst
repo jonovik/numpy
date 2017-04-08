@@ -54,9 +54,12 @@ Sums, products, differences
 
    prod
    sum
+   nanprod
    nansum
    cumprod
    cumsum
+   nancumprod
+   nancumsum
    diff
    ediff1d
    gradient
@@ -95,6 +98,8 @@ Floating point routines
    copysign
    frexp
    ldexp
+   nextafter
+   spacing
 
 Arithmetic operations
 ---------------------
@@ -110,6 +115,7 @@ Arithmetic operations
    subtract
    true_divide
    floor_divide
+   float_power
 
    fmod
    mod
@@ -136,13 +142,17 @@ Miscellaneous
    clip
 
    sqrt
+   cbrt
    square
 
    absolute
    fabs
    sign
+   heaviside
    maximum
    minimum
+   fmax
+   fmin
 
    nan_to_num
    real_if_close

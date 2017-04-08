@@ -1,5 +1,6 @@
-""" Build swig, f2py, pyrex sources.
+""" Build swig and f2py sources.
 """
+from __future__ import division, absolute_import, print_function
 
 import os
 import re
@@ -12,31 +13,26 @@ from distutils.dep_util import newer_group, newer
 from distutils.util import get_platform
 from distutils.errors import DistutilsError, DistutilsSetupError
 
-def have_pyrex():
-    try:
-        import Pyrex.Compiler.Main
-        return True
-    except ImportError:
-        return False
 
 # this import can't be done here, as it uses numpy stuff only available
 # after it's installed
 #import numpy.f2py
 from numpy.distutils import log
-from numpy.distutils.misc_util import fortran_ext_match, \
-     appendpath, is_string, is_sequence, get_cmd
+from numpy.distutils.misc_util import (
+    fortran_ext_match, appendpath, is_string, is_sequence, get_cmd
+    )
 from numpy.distutils.from_template import process_file as process_f_file
 from numpy.distutils.conv_template import process_file as process_c_file
 
 def subst_vars(target, source, d):
-    """Substitute any occurence of @foo@ by d['foo'] from source file into
+    """Substitute any occurrence of @foo@ by d['foo'] from source file into
     target."""
     var = re.compile('@([a-zA-Z_]+)@')
     fs = open(source, 'r')
     try:
         ft = open(target, 'w')
         try:
-            for l in fs.readlines():
+            for l in fs:
                 m = var.search(l)
                 if m:
                     ft.write(l.replace('@%s@' % m.group(1), d[m.group(1)]))
@@ -65,7 +61,7 @@ class build_src(build_ext.build_ext):
          "directory alongside your pure Python modules"),
         ]
 
-    boolean_options = ['force','inplace']
+    boolean_options = ['force', 'inplace']
 
     help_options = []
 
@@ -135,14 +131,14 @@ class build_src(build_ext.build_ext):
             self.inplace = build_ext.inplace
         if self.swig_cpp is None:
             self.swig_cpp = build_ext.swig_cpp
-        for c in ['swig','swig_opt']:
-            o = '--'+c.replace('_','-')
-            v = getattr(build_ext,c,None)
+        for c in ['swig', 'swig_opt']:
+            o = '--'+c.replace('_', '-')
+            v = getattr(build_ext, c, None)
             if v:
-                if getattr(self,c):
+                if getattr(self, c):
                     log.warn('both build_src and build_ext define %s option' % (o))
                 else:
-                    log.info('using "%s=%s" option from build_ext command' % (o,v))
+                    log.info('using "%s=%s" option from build_ext command' % (o, v))
                     setattr(self, c, v)
 
     def run(self):
@@ -178,29 +174,29 @@ class build_src(build_ext.build_ext):
         from numpy.distutils.misc_util import get_data_files
         new_data_files = []
         for data in self.data_files:
-            if isinstance(data,str):
+            if isinstance(data, str):
                 new_data_files.append(data)
-            elif isinstance(data,tuple):
-                d,files = data
+            elif isinstance(data, tuple):
+                d, files = data
                 if self.inplace:
                     build_dir = self.get_package_dir('.'.join(d.split(os.sep)))
                 else:
-                    build_dir = os.path.join(self.build_src,d)
-                funcs = filter(lambda f:hasattr(f, '__call__'), files)
-                files = filter(lambda f:not hasattr(f, '__call__'), files)
+                    build_dir = os.path.join(self.build_src, d)
+                funcs = [f for f in files if hasattr(f, '__call__')]
+                files = [f for f in files if not hasattr(f, '__call__')]
                 for f in funcs:
-                    if f.func_code.co_argcount==1:
+                    if f.__code__.co_argcount==1:
                         s = f(build_dir)
                     else:
                         s = f()
                     if s is not None:
-                        if isinstance(s,list):
+                        if isinstance(s, list):
                             files.extend(s)
-                        elif isinstance(s,str):
+                        elif isinstance(s, str):
                             files.append(s)
                         else:
                             raise TypeError(repr(s))
-                filenames = get_data_files((d,files))
+                filenames = get_data_files((d, files))
                 new_data_files.append((d, filenames))
             else:
                 raise TypeError(repr(data))
@@ -288,7 +284,7 @@ class build_src(build_ext.build_ext):
         self.py_modules[:] = new_py_modules
 
     def build_library_sources(self, lib_name, build_info):
-        sources = list(build_info.get('sources',[]))
+        sources = list(build_info.get('sources', []))
 
         if not sources:
             return
@@ -326,13 +322,9 @@ class build_src(build_ext.build_ext):
             self.ext_target_dir = self.get_package_dir(package)
 
         sources = self.generate_sources(sources, ext)
-
         sources = self.template_sources(sources, ext)
-
         sources = self.swig_sources(sources, ext)
-
         sources = self.f2py_sources(sources, ext)
-
         sources = self.pyrex_sources(sources, ext)
 
         sources, py_files = self.filter_py_files(sources)
@@ -395,10 +387,10 @@ class build_src(build_ext.build_ext):
         return new_sources
 
     def filter_py_files(self, sources):
-        return self.filter_files(sources,['.py'])
+        return self.filter_files(sources, ['.py'])
 
     def filter_h_files(self, sources):
-        return self.filter_files(sources,['.h','.hpp','.inc'])
+        return self.filter_files(sources, ['.h', '.hpp', '.inc'])
 
     def filter_files(self, sources, exts = []):
         new_sources = []
@@ -427,7 +419,7 @@ class build_src(build_ext.build_ext):
                 else:
                     target_dir = appendpath(self.build_src, os.path.dirname(base))
                 self.mkpath(target_dir)
-                target_file = os.path.join(target_dir,os.path.basename(base))
+                target_file = os.path.join(target_dir, os.path.basename(base))
                 if (self.force or newer_group([source] + depends, target_file)):
                     if _f_pyf_ext_match(base):
                         log.info("from_template:> %s" % (target_file))
@@ -435,7 +427,7 @@ class build_src(build_ext.build_ext):
                     else:
                         log.info("conv_template:> %s" % (target_file))
                         outstr = process_c_file(source)
-                    fid = open(target_file,'w')
+                    fid = open(target_file, 'w')
                     fid.write(outstr)
                     fid.close()
                 if _header_ext_match(target_file):
@@ -449,6 +441,7 @@ class build_src(build_ext.build_ext):
         return new_sources
 
     def pyrex_sources(self, sources, extension):
+        """Pyrex not supported; this remains for Cython support (see below)"""
         new_sources = []
         ext_name = extension.name.split('.')[-1]
         for source in sources:
@@ -463,34 +456,12 @@ class build_src(build_ext.build_ext):
         return new_sources
 
     def generate_a_pyrex_source(self, base, ext_name, source, extension):
-        if self.inplace or not have_pyrex():
-            target_dir = os.path.dirname(base)
-        else:
-            target_dir = appendpath(self.build_src, os.path.dirname(base))
-        target_file = os.path.join(target_dir, ext_name + '.c')
-        depends = [source] + extension.depends
-        if self.force or newer_group(depends, target_file, 'newer'):
-            if have_pyrex():
-                import Pyrex.Compiler.Main
-                log.info("pyrexc:> %s" % (target_file))
-                self.mkpath(target_dir)
-                options = Pyrex.Compiler.Main.CompilationOptions(
-                    defaults=Pyrex.Compiler.Main.default_options,
-                    include_path=extension.include_dirs,
-                    output_file=target_file)
-                pyrex_result = Pyrex.Compiler.Main.compile(source,
-                                                           options=options)
-                if pyrex_result.num_errors != 0:
-                    raise DistutilsError("%d errors while compiling %r with Pyrex" \
-                          % (pyrex_result.num_errors, source))
-            elif os.path.isfile(target_file):
-                log.warn("Pyrex required for compiling %r but not available,"\
-                         " using old target %r"\
-                         % (source, target_file))
-            else:
-                raise DistutilsError("Pyrex required for compiling %r"\
-                                     " but notavailable" % (source,))
-        return target_file
+        """Pyrex is not supported, but some projects monkeypatch this method.
+
+        That allows compiling Cython code, see gh-6955.
+        This method will remain here for compatibility reasons.
+        """
+        return []
 
     def f2py_sources(self, sources, extension):
         new_sources = []
@@ -514,20 +485,20 @@ class build_src(build_ext.build_ext):
                         raise DistutilsSetupError('mismatch of extension names: %s '
                                                   'provides %r but expected %r' % (
                             source, name, ext_name))
-                    target_file = os.path.join(target_dir,name+'module.c')
+                    target_file = os.path.join(target_dir, name+'module.c')
                 else:
                     log.debug('  source %s does not exist: skipping f2py\'ing.' \
                               % (source))
                     name = ext_name
                     skip_f2py = 1
-                    target_file = os.path.join(target_dir,name+'module.c')
+                    target_file = os.path.join(target_dir, name+'module.c')
                     if not os.path.isfile(target_file):
                         log.warn('  target %s does not exist:\n   '\
                                  'Assuming %smodule.c was generated with '\
                                  '"build_src --inplace" command.' \
                                  % (target_file, name))
                         target_dir = os.path.dirname(base)
-                        target_file = os.path.join(target_dir,name+'module.c')
+                        target_file = os.path.join(target_dir, name+'module.c')
                         if not os.path.isfile(target_file):
                             raise DistutilsSetupError("%r missing" % (target_file,))
                         log.info('   Yes! Using %r as up-to-date target.' \
@@ -550,9 +521,9 @@ class build_src(build_ext.build_ext):
         f2py_options = extension.f2py_options + self.f2py_opts
 
         if self.distribution.libraries:
-            for name,build_info in self.distribution.libraries:
+            for name, build_info in self.distribution.libraries:
                 if name in extension.libraries:
-                    f2py_options.extend(build_info.get('f2py_options',[]))
+                    f2py_options.extend(build_info.get('f2py_options', []))
 
         log.info("f2py options: %s" % (f2py_options))
 
@@ -565,12 +536,12 @@ class build_src(build_ext.build_ext):
             target_file = f2py_targets[source]
             target_dir = os.path.dirname(target_file) or '.'
             depends = [source] + extension.depends
-            if (self.force or newer_group(depends, target_file,'newer')) \
+            if (self.force or newer_group(depends, target_file, 'newer')) \
                    and not skip_f2py:
                 log.info("f2py: %s" % (source))
                 import numpy.f2py
                 numpy.f2py.run_main(f2py_options
-                                    + ['--build-dir',target_dir,source])
+                                    + ['--build-dir', target_dir, source])
             else:
                 log.debug("  skipping '%s' f2py interface (up-to-date)" % (source))
         else:
@@ -580,7 +551,7 @@ class build_src(build_ext.build_ext):
             else: name = extension.name
             target_dir = os.path.join(*([self.build_src]\
                                         +name.split('.')[:-1]))
-            target_file = os.path.join(target_dir,ext_name + 'module.c')
+            target_file = os.path.join(target_dir, ext_name + 'module.c')
             new_sources.append(target_file)
             depends = f_sources + extension.depends
             if (self.force or newer_group(depends, target_file, 'newer')) \
@@ -589,8 +560,8 @@ class build_src(build_ext.build_ext):
                 self.mkpath(target_dir)
                 import numpy.f2py
                 numpy.f2py.run_main(f2py_options + ['--lower',
-                                                '--build-dir',target_dir]+\
-                                ['-m',ext_name]+f_sources)
+                                                '--build-dir', target_dir]+\
+                                ['-m', ext_name]+f_sources)
             else:
                 log.debug("  skipping f2py fortran files for '%s' (up-to-date)"\
                           % (target_file))
@@ -598,8 +569,8 @@ class build_src(build_ext.build_ext):
         if not os.path.isfile(target_file):
             raise DistutilsError("f2py target file %r not generated" % (target_file,))
 
-        target_c = os.path.join(self.build_src,'fortranobject.c')
-        target_h = os.path.join(self.build_src,'fortranobject.h')
+        target_c = os.path.join(self.build_src, 'fortranobject.c')
+        target_h = os.path.join(self.build_src, 'fortranobject.h')
         log.info("  adding '%s' to sources." % (target_c))
         new_sources.append(target_c)
         if self.build_src not in extension.include_dirs:
@@ -610,20 +581,20 @@ class build_src(build_ext.build_ext):
         if not skip_f2py:
             import numpy.f2py
             d = os.path.dirname(numpy.f2py.__file__)
-            source_c = os.path.join(d,'src','fortranobject.c')
-            source_h = os.path.join(d,'src','fortranobject.h')
-            if newer(source_c,target_c) or newer(source_h,target_h):
+            source_c = os.path.join(d, 'src', 'fortranobject.c')
+            source_h = os.path.join(d, 'src', 'fortranobject.h')
+            if newer(source_c, target_c) or newer(source_h, target_h):
                 self.mkpath(os.path.dirname(target_c))
-                self.copy_file(source_c,target_c)
-                self.copy_file(source_h,target_h)
+                self.copy_file(source_c, target_c)
+                self.copy_file(source_h, target_h)
         else:
             if not os.path.isfile(target_c):
                 raise DistutilsSetupError("f2py target_c file %r not found" % (target_c,))
             if not os.path.isfile(target_h):
                 raise DistutilsSetupError("f2py target_h file %r not found" % (target_h,))
 
-        for name_ext in ['-f2pywrappers.f','-f2pywrappers2.f90']:
-            filename = os.path.join(target_dir,ext_name + name_ext)
+        for name_ext in ['-f2pywrappers.f', '-f2pywrappers2.f90']:
+            filename = os.path.join(target_dir, ext_name + name_ext)
             if os.path.isfile(filename):
                 log.info("  adding '%s' to sources." % (filename))
                 f_sources.append(filename)
@@ -673,25 +644,22 @@ class build_src(build_ext.build_ext):
                     if typ is None:
                         typ = get_swig_target(source)
                         is_cpp = typ=='c++'
-                        if is_cpp: 
-                            target_ext = '.cpp'
                     else:
                         typ2 = get_swig_target(source)
                         if typ2 is None:
                             log.warn('source %r does not define swig target, assuming %s swig target' \
                                      % (source, typ))
-                            if is_cpp: 
-                                target_ext = '.cpp'
                         elif typ!=typ2:
                             log.warn('expected %r but source %r defines %r swig target' \
                                      % (typ, source, typ2))
                             if typ2=='c++':
                                 log.warn('resetting swig target to c++ (some targets may have .c extension)')
                                 is_cpp = True
-                                target_ext = '.cpp'
                             else:
                                 log.warn('assuming that %r has c++ swig target' % (source))
-                    target_file = os.path.join(target_dir,'%s_wrap%s' \
+                    if is_cpp:
+                        target_ext = '.cpp'
+                    target_file = os.path.join(target_dir, '%s_wrap%s' \
                                                % (name, target_ext))
                 else:
                     log.warn('  source %s does not exist: skipping swig\'ing.' \
@@ -747,17 +715,17 @@ class build_src(build_ext.build_ext):
 
         return new_sources + py_files
 
-_f_pyf_ext_match = re.compile(r'.*[.](f90|f95|f77|for|ftn|f|pyf)\Z',re.I).match
-_header_ext_match = re.compile(r'.*[.](inc|h|hpp)\Z',re.I).match
+_f_pyf_ext_match = re.compile(r'.*[.](f90|f95|f77|for|ftn|f|pyf)\Z', re.I).match
+_header_ext_match = re.compile(r'.*[.](inc|h|hpp)\Z', re.I).match
 
 #### SWIG related auxiliary functions ####
 _swig_module_name_match = re.compile(r'\s*%module\s*(.*\(\s*package\s*=\s*"(?P<package>[\w_]+)".*\)|)\s*(?P<name>[\w_]+)',
                                      re.I).match
-_has_c_header = re.compile(r'-[*]-\s*c\s*-[*]-',re.I).search
-_has_cpp_header = re.compile(r'-[*]-\s*c[+][+]\s*-[*]-',re.I).search
+_has_c_header = re.compile(r'-[*]-\s*c\s*-[*]-', re.I).search
+_has_cpp_header = re.compile(r'-[*]-\s*c[+][+]\s*-[*]-', re.I).search
 
 def get_swig_target(source):
-    f = open(source,'r')
+    f = open(source, 'r')
     result = None
     line = f.readline()
     if _has_cpp_header(line):
@@ -768,10 +736,9 @@ def get_swig_target(source):
     return result
 
 def get_swig_modulename(source):
-    f = open(source,'r')
-    f_readlines = getattr(f,'xreadlines',f.readlines)
+    f = open(source, 'r')
     name = None
-    for line in f_readlines():
+    for line in f:
         m = _swig_module_name_match(line)
         if m:
             name = m.group('name')
@@ -779,9 +746,9 @@ def get_swig_modulename(source):
     f.close()
     return name
 
-def _find_swig_target(target_dir,name):
-    for ext in ['.cpp','.c']:
-        target = os.path.join(target_dir,'%s_wrap%s' % (name, ext))
+def _find_swig_target(target_dir, name):
+    for ext in ['.cpp', '.c']:
+        target = os.path.join(target_dir, '%s_wrap%s' % (name, ext))
         if os.path.isfile(target):
             break
     return target
@@ -789,15 +756,14 @@ def _find_swig_target(target_dir,name):
 #### F2PY related auxiliary functions ####
 
 _f2py_module_name_match = re.compile(r'\s*python\s*module\s*(?P<name>[\w_]+)',
-                                re.I).match
-_f2py_user_module_name_match = re.compile(r'\s*python\s*module\s*(?P<name>[\w_]*?'\
-                                     '__user__[\w_]*)',re.I).match
+                                     re.I).match
+_f2py_user_module_name_match = re.compile(r'\s*python\s*module\s*(?P<name>[\w_]*?'
+                                          r'__user__[\w_]*)', re.I).match
 
 def get_f2py_modulename(source):
     name = None
     f = open(source)
-    f_readlines = getattr(f,'xreadlines',f.readlines)
-    for line in f_readlines():
+    for line in f:
         m = _f2py_module_name_match(line)
         if m:
             if _f2py_user_module_name_match(line): # skip *__user__* names

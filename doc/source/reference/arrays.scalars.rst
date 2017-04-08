@@ -61,19 +61,19 @@ are also provided. The C-like names are associated with character codes,
 which are shown in the table. Use of the character codes, however,
 is discouraged.
 
-Five of the scalar types are essentially equivalent to fundamental
+Some of the scalar types are essentially equivalent to fundamental
 Python types and therefore inherit from them as well as from the
 generic array scalar type:
 
-====================  ====================
+====================  ================================
 Array scalar type     Related Python type
-====================  ====================
-:class:`int_`         :class:`IntType`
+====================  ================================
+:class:`int_`         :class:`IntType` (Python 2 only)
 :class:`float_`       :class:`FloatType`
 :class:`complex_`     :class:`ComplexType`
 :class:`str_`         :class:`StringType`
 :class:`unicode_`     :class:`UnicodeType`
-====================  ====================
+====================  ================================
 
 The :class:`bool_` data type is very similar to the Python
 :class:`BooleanType` but does not inherit from it because Python's
@@ -88,8 +88,13 @@ Python Boolean scalar.
    than Python's default implementation of :class:`bool` as a
    sub-class of int.
 
+.. warning::
 
-.. tip:: The default data type in Numpy is :class:`float_`.
+   The :class:`int_` type does **not** inherit from the
+   :class:`int` built-in under Python 3, because type :class:`int` is no
+   longer a fixed-width integer type.
+
+.. tip:: The default data type in NumPy is :class:`float_`.
 
 In the tables below, ``platform?`` means that the type may not be
 available on all platforms. Compatibility with different C or Python
@@ -210,7 +215,7 @@ Attributes
 ==========
 
 The array scalar objects have an :obj:`array priority
-<__array_priority__>` of :cdata:`NPY_SCALAR_PRIORITY`
+<__array_priority__>` of :c:data:`NPY_SCALAR_PRIORITY`
 (-1,000,000.0). They also do not (yet) have a :attr:`ctypes <ndarray.ctypes>`
 attribute. Otherwise, they share the same attributes as arrays:
 
@@ -243,9 +248,10 @@ Indexing
 Array scalars can be indexed like 0-dimensional arrays: if *x* is an
 array scalar,
 
-- ``x[()]`` returns a 0-dimensional :class:`ndarray`
+- ``x[()]`` returns a copy of array scalar
+- ``x[...]`` returns a 0-dimensional :class:`ndarray`
 - ``x['field-name']`` returns the array scalar in the field *field-name*.
-  (*x* can have fields, for example, when it corresponds to a record data type.)
+  (*x* can have fields, for example, when it corresponds to a structured data type.)
 
 Methods
 =======
@@ -266,7 +272,7 @@ The exceptions to the above rules are given below:
    generic
    generic.__array__
    generic.__array_wrap__
-   generic.__squeeze__
+   generic.squeeze
    generic.byteswap
    generic.__reduce__
    generic.__setstate__
@@ -277,10 +283,10 @@ Defining new types
 ==================
 
 There are two ways to effectively define a new array scalar type
-(apart from composing record :ref:`dtypes <arrays.dtypes>` from the built-in
-scalar types): One way is to simply subclass the :class:`ndarray` and
-overwrite the methods of interest. This will work to a degree, but
-internally certain behaviors are fixed by the data type of the array.
-To fully customize the data type of an array you need to define a new
-data-type, and register it with NumPy. Such new types can only be
-defined in C, using the :ref:`Numpy C-API <c-api>`.
+(apart from composing structured types :ref:`dtypes <arrays.dtypes>` from
+the built-in scalar types): One way is to simply subclass the
+:class:`ndarray` and overwrite the methods of interest. This will work to
+a degree, but internally certain behaviors are fixed by the data type of
+the array.  To fully customize the data type of an array you need to
+define a new data-type, and register it with NumPy. Such new types can only
+be defined in C, using the :ref:`NumPy C-API <c-api>`.

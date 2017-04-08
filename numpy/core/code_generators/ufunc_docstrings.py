@@ -1,4 +1,15 @@
-# Docstrings for generated ufuncs
+"""
+Docstrings for generated ufuncs
+
+The syntax is designed to look like the function add_newdoc is being
+called from numpy.lib, but in this file  add_newdoc puts the docstrings
+in a dictionary. This dictionary is used in
+numpy/core/code_generators/generate_umath.py to generate the docstrings
+for the ufuncs in numpy.core at the C level when the ufuncs are created
+at compile time.
+
+"""
+from __future__ import division, absolute_import, print_function
 
 docdict = {}
 
@@ -37,14 +48,14 @@ add_newdoc('numpy.core.umath', 'absolute',
 
     >>> import matplotlib.pyplot as plt
 
-    >>> x = np.linspace(-10, 10, 101)
+    >>> x = np.linspace(start=-10, stop=10, num=101)
     >>> plt.plot(x, np.absolute(x))
     >>> plt.show()
 
     Plot the function over the complex plane:
 
     >>> xx = x + 1j * x[:, np.newaxis]
-    >>> plt.imshow(np.abs(xx), extent=[-10, 10, -10, 10])
+    >>> plt.imshow(np.abs(xx), extent=[-10, 10, -10, 10], cmap='gray')
     >>> plt.show()
 
     """)
@@ -62,7 +73,7 @@ add_newdoc('numpy.core.umath', 'add',
 
     Returns
     -------
-    y : ndarray or scalar
+    add : ndarray or scalar
         The sum of `x1` and `x2`, element-wise.  Returns a scalar if
         both  `x1` and `x2` are scalars.
 
@@ -151,7 +162,7 @@ add_newdoc('numpy.core.umath', 'arccos',
 
 add_newdoc('numpy.core.umath', 'arccosh',
     """
-    Inverse hyperbolic cosine, elementwise.
+    Inverse hyperbolic cosine, element-wise.
 
     Parameters
     ----------
@@ -164,7 +175,7 @@ add_newdoc('numpy.core.umath', 'arccosh',
 
     Returns
     -------
-    y : ndarray
+    arccosh : ndarray
         Array of the same shape as `x`.
 
     See Also
@@ -261,7 +272,7 @@ add_newdoc('numpy.core.umath', 'arcsin',
 
 add_newdoc('numpy.core.umath', 'arcsinh',
     """
-    Inverse hyperbolic sine elementwise.
+    Inverse hyperbolic sine element-wise.
 
     Parameters
     ----------
@@ -456,7 +467,7 @@ add_newdoc('numpy.core.umath', '_arg',
 
 add_newdoc('numpy.core.umath', 'arctanh',
     """
-    Inverse hyperbolic tangent elementwise.
+    Inverse hyperbolic tangent element-wise.
 
     Parameters
     ----------
@@ -475,15 +486,15 @@ add_newdoc('numpy.core.umath', 'arctanh',
     Notes
     -----
     `arctanh` is a multivalued function: for each `x` there are infinitely
-    many numbers `z` such that `tanh(z) = x`. The convention is to return the
-    `z` whose imaginary part lies in `[-pi/2, pi/2]`.
+    many numbers `z` such that `tanh(z) = x`. The convention is to return
+    the `z` whose imaginary part lies in `[-pi/2, pi/2]`.
 
     For real-valued input data types, `arctanh` always returns real output.
-    For each value that cannot be expressed as a real number or infinity, it
-    yields ``nan`` and sets the `invalid` floating point error flag.
+    For each value that cannot be expressed as a real number or infinity,
+    it yields ``nan`` and sets the `invalid` floating point error flag.
 
-    For complex-valued input, `arctanh` is a complex analytical function that
-    has branch cuts `[-1, -inf]` and `[1, inf]` and is continuous from
+    For complex-valued input, `arctanh` is a complex analytical function
+    that has branch cuts `[-1, -inf]` and `[1, inf]` and is continuous from
     above on the former and from below on the latter.
 
     The inverse hyperbolic tangent is also known as `atanh` or ``tanh^-1``.
@@ -513,7 +524,7 @@ add_newdoc('numpy.core.umath', 'bitwise_and',
     Parameters
     ----------
     x1, x2 : array_like
-        Only integer types are handled (including booleans).
+        Only integer and boolean types are handled.
 
     Returns
     -------
@@ -564,7 +575,7 @@ add_newdoc('numpy.core.umath', 'bitwise_or',
     Parameters
     ----------
     x1, x2 : array_like
-        Only integer types are handled (including booleans).
+        Only integer and boolean types are handled.
     out : ndarray, optional
         Array into which the output is placed. Its type is preserved and it
         must be of the right shape to hold the output. See doc.ufuncs.
@@ -623,7 +634,7 @@ add_newdoc('numpy.core.umath', 'bitwise_xor',
     Parameters
     ----------
     x1, x2 : array_like
-        Only integer types are handled (including booleans).
+        Only integer and boolean types are handled.
 
     Returns
     -------
@@ -675,7 +686,7 @@ add_newdoc('numpy.core.umath', 'ceil',
 
     Returns
     -------
-    y : {ndarray, scalar}
+    y : ndarray or scalar
         The ceiling of each element in `x`, with `float` dtype.
 
     See Also
@@ -705,7 +716,7 @@ add_newdoc('numpy.core.umath', 'trunc',
 
     Returns
     -------
-    y : {ndarray, scalar}
+    y : ndarray or scalar
         The truncated value of each element in `x`.
 
     See Also
@@ -755,7 +766,7 @@ add_newdoc('numpy.core.umath', 'conjugate',
 
 add_newdoc('numpy.core.umath', 'cos',
     """
-    Cosine elementwise.
+    Cosine element-wise.
 
     Parameters
     ----------
@@ -904,6 +915,50 @@ add_newdoc('numpy.core.umath', 'rad2deg',
 
     """)
 
+add_newdoc('numpy.core.umath', 'heaviside',
+    """
+    Compute the Heaviside step function.
+
+    The Heaviside step function is defined as::
+
+                             0   if x < 0
+        heaviside(x, h0) =  h0   if x == 0
+                             1   if x > 0
+
+    where `h0` is often taken to be 0.5, but 0 and 1 are also sometimes used.
+
+    Parameters
+    ----------
+    x : array_like
+        Input values.
+    h0 : array_like
+        The value of the function at x = 0.
+    out : ndarray, optional
+        Array into which the output is placed. Its type is preserved and it
+        must be of the right shape to hold the output. See doc.ufuncs.
+
+    Returns
+    -------
+    out : ndarray
+        The output array, element-wise Heaviside step function of `x`.
+
+    Notes
+    -----
+    .. versionadded:: 1.13.0
+
+    References
+    ----------
+    .. Wikipedia, "Heaviside step function",
+       https://en.wikipedia.org/wiki/Heaviside_step_function
+
+    Examples
+    --------
+    >>> np.heaviside([-1.5, 0, 2.0], 0.5)
+    array([ 0. ,  0.5,  1. ])
+    >>> np.heaviside([-1.5, 0, 2.0], 1)
+    array([ 0.,  1.,  1.])
+    """)
+
 add_newdoc('numpy.core.umath', 'divide',
     """
     Divide arguments element-wise.
@@ -920,24 +975,24 @@ add_newdoc('numpy.core.umath', 'divide',
 
     Returns
     -------
-    y : {ndarray, scalar}
-        The quotient `x1/x2`, element-wise. Returns a scalar if
-        both  `x1` and `x2` are scalars.
+    y : ndarray or scalar
+        The quotient ``x1/x2``, element-wise. Returns a scalar if
+        both ``x1`` and ``x2`` are scalars.
 
     See Also
     --------
-    seterr : Set whether to raise or warn on overflow, underflow and division
-             by zero.
+    seterr : Set whether to raise or warn on overflow, underflow and
+             division by zero.
 
     Notes
     -----
-    Equivalent to `x1` / `x2` in terms of array-broadcasting.
+    Equivalent to ``x1`` / ``x2`` in terms of array-broadcasting.
 
-    Behavior on division by zero can be changed using `seterr`.
+    Behavior on division by zero can be changed using ``seterr``.
 
-    When both `x1` and `x2` are of an integer type, `divide` will return
-    integers and throw away the fractional part. Moreover, division by zero
-    always yields zero in integer arithmetic.
+    In Python 2, when both ``x1`` and ``x2`` are of an integer type,
+    ``divide`` will behave like ``floor_divide``. In Python 3, it behaves
+    like ``true_divide``.
 
     Examples
     --------
@@ -950,20 +1005,20 @@ add_newdoc('numpy.core.umath', 'divide',
            [ Inf,  4. ,  2.5],
            [ Inf,  7. ,  4. ]])
 
-    Note the behavior with integer types:
+    Note the behavior with integer types (Python 2 only):
 
     >>> np.divide(2, 4)
     0
     >>> np.divide(2, 4.)
     0.5
 
-    Division by zero always yields zero in integer arithmetic, and does not
-    raise an exception or a warning:
+    Division by zero always yields zero in integer arithmetic (again,
+    Python 2 only), and does not raise an exception or a warning:
 
     >>> np.divide(np.array([0, 1], dtype=int), np.array([0, 0], dtype=int))
     array([0, 0])
 
-    Division by zero can, however, be caught using `seterr`:
+    Division by zero can, however, be caught using ``seterr``:
 
     >>> old_err_state = np.seterr(divide='raise')
     >>> np.divide(1, 0)
@@ -988,7 +1043,7 @@ add_newdoc('numpy.core.umath', 'equal',
 
     Returns
     -------
-    out : {ndarray, bool}
+    out : ndarray or bool
         Output array of bools, or a single bool if x1 and x2 are scalars.
 
     See Also
@@ -1037,8 +1092,8 @@ add_newdoc('numpy.core.umath', 'exp',
     For complex arguments, ``x = a + ib``, we can write
     :math:`e^x = e^a e^{ib}`.  The first term, :math:`e^a`, is already
     known (it is the real argument, described above).  The second term,
-    :math:`e^{ib}`, is :math:`\\cos b + i \\sin b`, a function with magnitude
-    1 and a periodic phase.
+    :math:`e^{ib}`, is :math:`\\cos b + i \\sin b`, a function with
+    magnitude 1 and a periodic phase.
 
     References
     ----------
@@ -1060,12 +1115,12 @@ add_newdoc('numpy.core.umath', 'exp',
 
     >>> plt.subplot(121)
     >>> plt.imshow(np.abs(out),
-    ...            extent=[-2*np.pi, 2*np.pi, -2*np.pi, 2*np.pi])
+    ...            extent=[-2*np.pi, 2*np.pi, -2*np.pi, 2*np.pi], cmap='gray')
     >>> plt.title('Magnitude of exp(x)')
 
     >>> plt.subplot(122)
     >>> plt.imshow(np.angle(out),
-    ...            extent=[-2*np.pi, 2*np.pi, -2*np.pi, 2*np.pi])
+    ...            extent=[-2*np.pi, 2*np.pi, -2*np.pi, 2*np.pi], cmap='hsv')
     >>> plt.title('Phase (angle) of exp(x)')
     >>> plt.show()
 
@@ -1090,7 +1145,7 @@ add_newdoc('numpy.core.umath', 'exp2',
 
     See Also
     --------
-    exp : calculate x**p.
+    power
 
     Notes
     -----
@@ -1126,7 +1181,7 @@ add_newdoc('numpy.core.umath', 'expm1',
 
     Notes
     -----
-    This function provides greater precision than the formula ``exp(x) - 1``
+    This function provides greater precision than ``exp(x) - 1``
     for small values of ``x``.
 
     Examples
@@ -1144,10 +1199,10 @@ add_newdoc('numpy.core.umath', 'expm1',
 
 add_newdoc('numpy.core.umath', 'fabs',
     """
-    Compute the absolute values elementwise.
+    Compute the absolute values element-wise.
 
-    This function returns the absolute values (positive magnitude) of the data
-    in `x`. Complex values are not handled, use `absolute` to find the
+    This function returns the absolute values (positive magnitude) of the
+    data in `x`. Complex values are not handled, use `absolute` to find the
     absolute values of complex data.
 
     Parameters
@@ -1161,7 +1216,7 @@ add_newdoc('numpy.core.umath', 'fabs',
 
     Returns
     -------
-    y : {ndarray, scalar}
+    y : ndarray or scalar
         The absolute values of `x`, the returned values are always floats.
 
     See Also
@@ -1191,7 +1246,7 @@ add_newdoc('numpy.core.umath', 'floor',
 
     Returns
     -------
-    y : {ndarray, scalar}
+    y : ndarray or scalar
         The floor of each element in `x`.
 
     See Also
@@ -1201,8 +1256,8 @@ add_newdoc('numpy.core.umath', 'floor',
     Notes
     -----
     Some spreadsheet programs calculate the "floor-towards-zero", in other
-    words ``floor(-2.5) == -2``.  NumPy, however, uses the a definition of
-    `floor` such that `floor(-2.5) == -3`.
+    words ``floor(-2.5) == -2``.  NumPy instead uses the definition of
+    `floor` where `floor(-2.5) == -3`.
 
     Examples
     --------
@@ -1215,6 +1270,9 @@ add_newdoc('numpy.core.umath', 'floor',
 add_newdoc('numpy.core.umath', 'floor_divide',
     """
     Return the largest integer smaller or equal to the division of the inputs.
+    It is equivalent to the Python ``//`` operator and pairs with the
+    Python ``%`` (`remainder`), function so that ``b = a % b + b * (a // b)``
+    up to roundoff.
 
     Parameters
     ----------
@@ -1231,6 +1289,7 @@ add_newdoc('numpy.core.umath', 'floor_divide',
 
     See Also
     --------
+    remainder : Remainder complementary to floor_divide.
     divide : Standard division.
     floor : Round a number to the nearest integer toward minus infinity.
     ceil : Round a number to the nearest integer toward infinity.
@@ -1248,7 +1307,10 @@ add_newdoc('numpy.core.umath', 'fmod',
     """
     Return the element-wise remainder of division.
 
-    This is the NumPy implementation of the Python modulo operator `%`.
+    This is the NumPy implementation of the C library function fmod, the
+    remainder has the same sign as the dividend `x1`. It is equivalent to
+    the Matlab(TM) ``rem`` function and should not be confused with the
+    Python modulus operator ``x1 % x2``.
 
     Parameters
     ----------
@@ -1264,15 +1326,16 @@ add_newdoc('numpy.core.umath', 'fmod',
 
     See Also
     --------
-    remainder : Modulo operation where the quotient is `floor(x1/x2)`.
+    remainder : Equivalent to the Python ``%`` operator.
     divide
 
     Notes
     -----
-    The result of the modulo operation for negative dividend and divisors is
-    bound by conventions. In `fmod`, the sign of the remainder is the sign of
-    the dividend. In `remainder`, the sign of the divisor does not affect the
-    sign of the result.
+    The result of the modulo operation for negative dividend and divisors
+    is bound by conventions. For `fmod`, the sign of result is the sign of
+    the dividend, while for `remainder` the sign of the result is the sign
+    of the divisor. The `fmod` function is equivalent to the Matlab(TM)
+    ``rem`` function.
 
     Examples
     --------
@@ -1403,17 +1466,17 @@ add_newdoc('numpy.core.umath', 'invert',
     the integers in the input arrays. This ufunc implements the C/Python
     operator ``~``.
 
-    For signed integer inputs, the two's complement is returned.
-    In a two's-complement system negative numbers are represented by the two's
+    For signed integer inputs, the two's complement is returned.  In a
+    two's-complement system negative numbers are represented by the two's
     complement of the absolute value. This is the most common method of
-    representing signed integers on computers [1]_. A N-bit two's-complement
-    system can represent every integer in the range
+    representing signed integers on computers [1]_. A N-bit
+    two's-complement system can represent every integer in the range
     :math:`-2^{N-1}` to :math:`+2^{N-1}-1`.
 
     Parameters
     ----------
     x1 : array_like
-        Only integer types are handled (including booleans).
+        Only integer and boolean types are handled.
 
     Returns
     -------
@@ -1477,7 +1540,7 @@ add_newdoc('numpy.core.umath', 'invert',
 
 add_newdoc('numpy.core.umath', 'isfinite',
     """
-    Test element-wise for finite-ness (not infinity or not Not a Number).
+    Test element-wise for finiteness (not infinity or not Not a Number).
 
     The result is returned as a boolean array.
 
@@ -1497,9 +1560,10 @@ add_newdoc('numpy.core.umath', 'isfinite',
         either positive infinity, negative infinity or Not a Number).
 
         For array input, the result is a boolean array with the same
-        dimensions as the input and the values are True if the corresponding
-        element of the input is finite; otherwise the values are False (element
-        is either positive infinity, negative infinity or Not a Number).
+        dimensions as the input and the values are True if the
+        corresponding element of the input is finite; otherwise the values
+        are False (element is either positive infinity, negative infinity
+        or Not a Number).
 
     See Also
     --------
@@ -1510,12 +1574,12 @@ add_newdoc('numpy.core.umath', 'isfinite',
     Not a Number, positive infinity and negative infinity are considered
     to be non-finite.
 
-    Numpy uses the IEEE Standard for Binary Floating-Point for Arithmetic
+    NumPy uses the IEEE Standard for Binary Floating-Point for Arithmetic
     (IEEE 754). This means that Not a Number is not equivalent to infinity.
     Also that positive infinity is not equivalent to negative infinity. But
-    infinity is equivalent to positive infinity.
-    Errors result if the second argument is also supplied when `x` is a scalar
-    input, or if first and second arguments have different shapes.
+    infinity is equivalent to positive infinity.  Errors result if the
+    second argument is also supplied when `x` is a scalar input, or if
+    first and second arguments have different shapes.
 
     Examples
     --------
@@ -1545,8 +1609,8 @@ add_newdoc('numpy.core.umath', 'isinf',
     """
     Test element-wise for positive or negative infinity.
 
-    Return a bool-type array, the same shape as `x`, True where ``x ==
-    +/-inf``, False everywhere else.
+    Returns a boolean array of the same shape as `x`, True where ``x ==
+    +/-inf``, otherwise False.
 
     Parameters
     ----------
@@ -1557,19 +1621,19 @@ add_newdoc('numpy.core.umath', 'isinf',
 
     Returns
     -------
-    y : bool (scalar) or bool-type ndarray
-        For scalar input, the result is a new boolean with value True
-        if the input is positive or negative infinity; otherwise the value
-        is False.
+    y : bool (scalar) or boolean ndarray
+        For scalar input, the result is a new boolean with value True if
+        the input is positive or negative infinity; otherwise the value is
+        False.
 
-        For array input, the result is a boolean array with the same
-        shape as the input and the values are True where the
-        corresponding element of the input is positive or negative
-        infinity; elsewhere the values are False.  If a second argument
-        was supplied the result is stored there.  If the type of that array
-        is a numeric type the result is represented as zeros and ones, if
-        the type is boolean then as False and True, respectively.
-        The return value `y` is then a reference to that array.
+        For array input, the result is a boolean array with the same shape
+        as the input and the values are True where the corresponding
+        element of the input is positive or negative infinity; elsewhere
+        the values are False.  If a second argument was supplied the result
+        is stored there.  If the type of that array is a numeric type the
+        result is represented as zeros and ones, if the type is boolean
+        then as False and True, respectively.  The return value `y` is then
+        a reference to that array.
 
     See Also
     --------
@@ -1577,7 +1641,7 @@ add_newdoc('numpy.core.umath', 'isinf',
 
     Notes
     -----
-    Numpy uses the IEEE Standard for Binary Floating-Point for Arithmetic
+    NumPy uses the IEEE Standard for Binary Floating-Point for Arithmetic
     (IEEE 754).
 
     Errors result if the second argument is supplied when the first
@@ -1606,7 +1670,7 @@ add_newdoc('numpy.core.umath', 'isinf',
 
 add_newdoc('numpy.core.umath', 'isnan',
     """
-    Test element-wise for Not a Number (NaN), return result as a bool array.
+    Test element-wise for NaN and return result as a boolean array.
 
     Parameters
     ----------
@@ -1615,13 +1679,14 @@ add_newdoc('numpy.core.umath', 'isnan',
 
     Returns
     -------
-    y : {ndarray, bool}
-        For scalar input, the result is a new boolean with value True
-        if the input is NaN; otherwise the value is False.
+    y : ndarray or bool
+        For scalar input, the result is a new boolean with value True if
+        the input is NaN; otherwise the value is False.
 
-        For array input, the result is a boolean array with the same
-        dimensions as the input and the values are True if the corresponding
-        element of the input is NaN; otherwise the values are False.
+        For array input, the result is a boolean array of the same
+        dimensions as the input and the values are True if the
+        corresponding element of the input is NaN; otherwise the values are
+        False.
 
     See Also
     --------
@@ -1629,7 +1694,7 @@ add_newdoc('numpy.core.umath', 'isnan',
 
     Notes
     -----
-    Numpy uses the IEEE Standard for Binary Floating-Point for Arithmetic
+    NumPy uses the IEEE Standard for Binary Floating-Point for Arithmetic
     (IEEE 754). This means that Not a Number is not equivalent to infinity.
 
     Examples
@@ -1742,7 +1807,8 @@ add_newdoc('numpy.core.umath', 'log',
     Natural logarithm, element-wise.
 
     The natural logarithm `log` is the inverse of the exponential function,
-    so that `log(exp(x)) = x`. The natural logarithm is logarithm in base `e`.
+    so that `log(exp(x)) = x`. The natural logarithm is logarithm in base
+    `e`.
 
     Parameters
     ----------
@@ -1761,8 +1827,8 @@ add_newdoc('numpy.core.umath', 'log',
     Notes
     -----
     Logarithm is a multivalued function: for each `x` there is an infinite
-    number of `z` such that `exp(z) = x`. The convention is to return the `z`
-    whose imaginary part lies in `[-pi, pi]`.
+    number of `z` such that `exp(z) = x`. The convention is to return the
+    `z` whose imaginary part lies in `[-pi, pi]`.
 
     For real-valued input data types, `log` always returns real output. For
     each value that cannot be expressed as a real number or infinity, it
@@ -1808,17 +1874,17 @@ add_newdoc('numpy.core.umath', 'log10',
     Notes
     -----
     Logarithm is a multivalued function: for each `x` there is an infinite
-    number of `z` such that `10**z = x`. The convention is to return the `z`
-    whose imaginary part lies in `[-pi, pi]`.
+    number of `z` such that `10**z = x`. The convention is to return the
+    `z` whose imaginary part lies in `[-pi, pi]`.
 
-    For real-valued input data types, `log10` always returns real output. For
-    each value that cannot be expressed as a real number or infinity, it
-    yields ``nan`` and sets the `invalid` floating point error flag.
+    For real-valued input data types, `log10` always returns real output.
+    For each value that cannot be expressed as a real number or infinity,
+    it yields ``nan`` and sets the `invalid` floating point error flag.
 
     For complex-valued input, `log10` is a complex analytical function that
-    has a branch cut `[-inf, 0]` and is continuous from above on it. `log10`
-    handles the floating-point negative zero as an infinitesimal negative
-    number, conforming to the C99 standard.
+    has a branch cut `[-inf, 0]` and is continuous from above on it.
+    `log10` handles the floating-point negative zero as an infinitesimal
+    negative number, conforming to the C99 standard.
 
     References
     ----------
@@ -1859,9 +1925,9 @@ add_newdoc('numpy.core.umath', 'log2',
     number of `z` such that `2**z = x`. The convention is to return the `z`
     whose imaginary part lies in `[-pi, pi]`.
 
-    For real-valued input data types, `log2` always returns real output. For
-    each value that cannot be expressed as a real number or infinity, it
-    yields ``nan`` and sets the `invalid` floating point error flag.
+    For real-valued input data types, `log2` always returns real output.
+    For each value that cannot be expressed as a real number or infinity,
+    it yields ``nan`` and sets the `invalid` floating point error flag.
 
     For complex-valued input, `log2` is a complex analytical function that
     has a branch cut `[-inf, 0]` and is continuous from above on it. `log2`
@@ -1902,7 +1968,7 @@ add_newdoc('numpy.core.umath', 'logaddexp',
 
     See Also
     --------
-    logaddexp2: Logarithm of the sum of exponentiations of inputs in base-2.
+    logaddexp2: Logarithm of the sum of exponentiations of inputs in base 2.
 
     Notes
     -----
@@ -1925,8 +1991,8 @@ add_newdoc('numpy.core.umath', 'logaddexp2',
     Logarithm of the sum of exponentiations of the inputs in base-2.
 
     Calculates ``log2(2**x1 + 2**x2)``. This function is useful in machine
-    learning when the calculated probabilities of events may be so small
-    as to exceed the range of normal floating point numbers.  In such cases
+    learning when the calculated probabilities of events may be so small as
+    to exceed the range of normal floating point numbers.  In such cases
     the base-2 logarithm of the calculated probability can be used instead.
     This function allows adding probabilities stored in such a fashion.
 
@@ -1991,14 +2057,14 @@ add_newdoc('numpy.core.umath', 'log1p',
     number of `z` such that `exp(z) = 1 + x`. The convention is to return
     the `z` whose imaginary part lies in `[-pi, pi]`.
 
-    For real-valued input data types, `log1p` always returns real output. For
-    each value that cannot be expressed as a real number or infinity, it
-    yields ``nan`` and sets the `invalid` floating point error flag.
+    For real-valued input data types, `log1p` always returns real output.
+    For each value that cannot be expressed as a real number or infinity,
+    it yields ``nan`` and sets the `invalid` floating point error flag.
 
     For complex-valued input, `log1p` is a complex analytical function that
-    has a branch cut `[-inf, -1]` and is continuous from above on it. `log1p`
-    handles the floating-point negative zero as an infinitesimal negative
-    number, conforming to the C99 standard.
+    has a branch cut `[-inf, -1]` and is continuous from above on it.
+    `log1p` handles the floating-point negative zero as an infinitesimal
+    negative number, conforming to the C99 standard.
 
     References
     ----------
@@ -2017,7 +2083,7 @@ add_newdoc('numpy.core.umath', 'log1p',
 
 add_newdoc('numpy.core.umath', 'logical_and',
     """
-    Compute the truth value of x1 AND x2 elementwise.
+    Compute the truth value of x1 AND x2 element-wise.
 
     Parameters
     ----------
@@ -2027,7 +2093,7 @@ add_newdoc('numpy.core.umath', 'logical_and',
 
     Returns
     -------
-    y : {ndarray, bool}
+    y : ndarray or bool
         Boolean result with the same shape as `x1` and `x2` of the logical
         AND operation on corresponding elements of `x1` and `x2`.
 
@@ -2051,7 +2117,7 @@ add_newdoc('numpy.core.umath', 'logical_and',
 
 add_newdoc('numpy.core.umath', 'logical_not',
     """
-    Compute the truth value of NOT x elementwise.
+    Compute the truth value of NOT x element-wise.
 
     Parameters
     ----------
@@ -2083,7 +2149,7 @@ add_newdoc('numpy.core.umath', 'logical_not',
 
 add_newdoc('numpy.core.umath', 'logical_or',
     """
-    Compute the truth value of x1 OR x2 elementwise.
+    Compute the truth value of x1 OR x2 element-wise.
 
     Parameters
     ----------
@@ -2093,7 +2159,7 @@ add_newdoc('numpy.core.umath', 'logical_or',
 
     Returns
     -------
-    y : {ndarray, bool}
+    y : ndarray or bool
         Boolean result with the same shape as `x1` and `x2` of the logical
         OR operation on elements of `x1` and `x2`.
 
@@ -2159,14 +2225,12 @@ add_newdoc('numpy.core.umath', 'maximum',
     """
     Element-wise maximum of array elements.
 
-    Compare two arrays and returns a new array containing
-    the element-wise maxima. If one of the elements being
-    compared is a nan, then that element is returned. If
-    both elements are nans then the first is returned. The
-    latter distinction is important for complex nans,
-    which are defined as at least one of the real or
-    imaginary parts being a nan. The net effect is that
-    nans are propagated.
+    Compare two arrays and returns a new array containing the element-wise
+    maxima. If one of the elements being compared is a NaN, then that
+    element is returned. If both elements are NaNs then the first is
+    returned. The latter distinction is important for complex NaNs, which
+    are defined as at least one of the real or imaginary parts being a NaN.
+    The net effect is that NaNs are propagated.
 
     Parameters
     ----------
@@ -2176,24 +2240,27 @@ add_newdoc('numpy.core.umath', 'maximum',
 
     Returns
     -------
-    y : {ndarray, scalar}
+    y : ndarray or scalar
         The maximum of `x1` and `x2`, element-wise.  Returns scalar if
         both  `x1` and `x2` are scalars.
 
     See Also
     --------
     minimum :
-      element-wise minimum
-
+        Element-wise minimum of two arrays, propagates NaNs.
     fmax :
-      element-wise maximum that ignores nans unless both inputs are nans.
+        Element-wise maximum of two arrays, ignores NaNs.
+    amax :
+        The maximum value of an array along a given axis, propagates NaNs.
+    nanmax :
+        The maximum value of an array along a given axis, ignores NaNs.
 
-    fmin :
-      element-wise minimum that ignores nans unless both inputs are nans.
+    fmin, amin, nanmin
 
     Notes
     -----
-    Equivalent to ``np.where(x1 > x2, x1, x2)`` but faster and does proper
+    The maximum is equivalent to ``np.where(x1 >= x2, x1, x2)`` when
+    neither x1 nor x2 are nans, but it is faster and does proper
     broadcasting.
 
     Examples
@@ -2201,7 +2268,7 @@ add_newdoc('numpy.core.umath', 'maximum',
     >>> np.maximum([2, 3, 4], [1, 5, 2])
     array([2, 5, 4])
 
-    >>> np.maximum(np.eye(2), [0.5, 2])
+    >>> np.maximum(np.eye(2), [0.5, 2]) # broadcasting
     array([[ 1. ,  2. ],
            [ 0.5,  2. ]])
 
@@ -2217,11 +2284,11 @@ add_newdoc('numpy.core.umath', 'minimum',
     Element-wise minimum of array elements.
 
     Compare two arrays and returns a new array containing the element-wise
-    minima. If one of the elements being compared is a nan, then that element
-    is returned. If both elements are nans then the first is returned. The
-    latter distinction is important for complex nans, which are defined as at
-    least one of the real or imaginary parts being a nan. The net effect is
-    that nans are propagated.
+    minima. If one of the elements being compared is a NaN, then that
+    element is returned. If both elements are NaNs then the first is
+    returned. The latter distinction is important for complex NaNs, which
+    are defined as at least one of the real or imaginary parts being a NaN.
+    The net effect is that NaNs are propagated.
 
     Parameters
     ----------
@@ -2231,23 +2298,28 @@ add_newdoc('numpy.core.umath', 'minimum',
 
     Returns
     -------
-    y : {ndarray, scalar}
+    y : ndarray or scalar
         The minimum of `x1` and `x2`, element-wise.  Returns scalar if
         both  `x1` and `x2` are scalars.
 
     See Also
     --------
     maximum :
-      element-wise minimum that propagates nans.
-    fmax :
-      element-wise maximum that ignores nans unless both inputs are nans.
+        Element-wise maximum of two arrays, propagates NaNs.
     fmin :
-      element-wise minimum that ignores nans unless both inputs are nans.
+        Element-wise minimum of two arrays, ignores NaNs.
+    amin :
+        The minimum value of an array along a given axis, propagates NaNs.
+    nanmin :
+        The minimum value of an array along a given axis, ignores NaNs.
+
+    fmax, amax, nanmax
 
     Notes
     -----
-    The minimum is equivalent to ``np.where(x1 <= x2, x1, x2)`` when neither
-    x1 nor x2 are nans, but it is faster and does proper broadcasting.
+    The minimum is equivalent to ``np.where(x1 <= x2, x1, x2)`` when
+    neither x1 nor x2 are NaNs, but it is faster and does proper
+    broadcasting.
 
     Examples
     --------
@@ -2260,6 +2332,8 @@ add_newdoc('numpy.core.umath', 'minimum',
 
     >>> np.minimum([np.nan, 0, np.nan],[0, np.nan, np.nan])
     array([ NaN,  NaN,  NaN])
+    >>> np.minimum(-np.Inf, 1)
+    -inf
 
     """)
 
@@ -2268,11 +2342,11 @@ add_newdoc('numpy.core.umath', 'fmax',
     Element-wise maximum of array elements.
 
     Compare two arrays and returns a new array containing the element-wise
-    maxima. If one of the elements being compared is a nan, then the non-nan
-    element is returned. If both elements are nans then the first is returned.
-    The latter distinction is important for complex nans, which are defined as
-    at least one of the real or imaginary parts being a nan. The net effect is
-    that nans are ignored when possible.
+    maxima. If one of the elements being compared is a NaN, then the
+    non-nan element is returned. If both elements are NaNs then the first
+    is returned.  The latter distinction is important for complex NaNs,
+    which are defined as at least one of the real or imaginary parts being
+    a NaN. The net effect is that NaNs are ignored when possible.
 
     Parameters
     ----------
@@ -2282,25 +2356,29 @@ add_newdoc('numpy.core.umath', 'fmax',
 
     Returns
     -------
-    y : {ndarray, scalar}
-        The minimum of `x1` and `x2`, element-wise.  Returns scalar if
+    y : ndarray or scalar
+        The maximum of `x1` and `x2`, element-wise.  Returns scalar if
         both  `x1` and `x2` are scalars.
 
     See Also
     --------
     fmin :
-      element-wise minimum that ignores nans unless both inputs are nans.
+        Element-wise minimum of two arrays, ignores NaNs.
     maximum :
-      element-wise maximum that propagates nans.
-    minimum :
-      element-wise minimum that propagates nans.
+        Element-wise maximum of two arrays, propagates NaNs.
+    amax :
+        The maximum value of an array along a given axis, propagates NaNs.
+    nanmax :
+        The maximum value of an array along a given axis, ignores NaNs.
+
+    minimum, amin, nanmin
 
     Notes
     -----
     .. versionadded:: 1.3.0
 
     The fmax is equivalent to ``np.where(x1 >= x2, x1, x2)`` when neither
-    x1 nor x2 are nans, but it is faster and does proper broadcasting.
+    x1 nor x2 are NaNs, but it is faster and does proper broadcasting.
 
     Examples
     --------
@@ -2318,16 +2396,14 @@ add_newdoc('numpy.core.umath', 'fmax',
 
 add_newdoc('numpy.core.umath', 'fmin',
     """
-    fmin(x1, x2[, out])
-
     Element-wise minimum of array elements.
 
     Compare two arrays and returns a new array containing the element-wise
-    minima. If one of the elements being compared is a nan, then the non-nan
-    element is returned. If both elements are nans then the first is returned.
-    The latter distinction is important for complex nans, which are defined as
-    at least one of the real or imaginary parts being a nan. The net effect is
-    that nans are ignored when possible.
+    minima. If one of the elements being compared is a NaN, then the
+    non-nan element is returned. If both elements are NaNs then the first
+    is returned.  The latter distinction is important for complex NaNs,
+    which are defined as at least one of the real or imaginary parts being
+    a NaN. The net effect is that NaNs are ignored when possible.
 
     Parameters
     ----------
@@ -2337,34 +2413,38 @@ add_newdoc('numpy.core.umath', 'fmin',
 
     Returns
     -------
-    y : {ndarray, scalar}
+    y : ndarray or scalar
         The minimum of `x1` and `x2`, element-wise.  Returns scalar if
         both  `x1` and `x2` are scalars.
 
     See Also
     --------
     fmax :
-      element-wise maximum that ignores nans unless both inputs are nans.
-    maximum :
-      element-wise maximum that propagates nans.
+        Element-wise maximum of two arrays, ignores NaNs.
     minimum :
-      element-wise minimum that propagates nans.
+        Element-wise minimum of two arrays, propagates NaNs.
+    amin :
+        The minimum value of an array along a given axis, propagates NaNs.
+    nanmin :
+        The minimum value of an array along a given axis, ignores NaNs.
+
+    maximum, amax, nanmax
 
     Notes
     -----
     .. versionadded:: 1.3.0
 
     The fmin is equivalent to ``np.where(x1 <= x2, x1, x2)`` when neither
-    x1 nor x2 are nans, but it is faster and does proper broadcasting.
+    x1 nor x2 are NaNs, but it is faster and does proper broadcasting.
 
     Examples
     --------
     >>> np.fmin([2, 3, 4], [1, 5, 2])
-    array([2, 5, 4])
+    array([1, 3, 2])
 
     >>> np.fmin(np.eye(2), [0.5, 2])
-    array([[ 1. ,  2. ],
-           [ 0.5,  2. ]])
+    array([[ 0.5,  0. ],
+           [ 0. ,  1. ]])
 
     >>> np.fmin([np.nan, 0, np.nan],[0, np.nan, np.nan])
     array([  0.,   0.,  NaN])
@@ -2438,7 +2518,7 @@ add_newdoc('numpy.core.umath', 'multiply',
 
 add_newdoc('numpy.core.umath', 'negative',
     """
-    Returns an array with the negative of each element of the original array.
+    Numerical negative, element-wise.
 
     Parameters
     ----------
@@ -2490,24 +2570,15 @@ add_newdoc('numpy.core.umath', 'not_equal',
 
     """)
 
-add_newdoc('numpy.core.umath', 'ones_like',
+add_newdoc('numpy.core.umath', '_ones_like',
     """
-    Returns an array of ones with the same shape and type as a given array.
-
-    Equivalent to ``a.copy().fill(1)``.
-
-    Please refer to the documentation for `zeros_like` for further details.
+    This function used to be the numpy.ones_like, but now a specific
+    function for that has been written for consistency with the other
+    *_like functions. It is only used internally in a limited fashion now.
 
     See Also
     --------
-    zeros_like, ones
-
-    Examples
-    --------
-    >>> a = np.array([[1, 2, 3], [4, 5, 6]])
-    >>> np.ones_like(a)
-    array([[1, 1, 1],
-           [1, 1, 1]])
+    ones_like
 
     """)
 
@@ -2516,7 +2587,8 @@ add_newdoc('numpy.core.umath', 'power',
     First array elements raised to powers from second array, element-wise.
 
     Raise each base in `x1` to the positionally-corresponding power in
-    `x2`.  `x1` and `x2` must be broadcastable to the same shape.
+    `x2`.  `x1` and `x2` must be broadcastable to the same shape. Note that an
+    integer type raised to a negative integer power will raise a ValueError.
 
     Parameters
     ----------
@@ -2529,6 +2601,10 @@ add_newdoc('numpy.core.umath', 'power',
     -------
     y : ndarray
         The bases in `x1` raised to the exponents in `x2`.
+
+    See Also
+    --------
+    float_power : power function that promotes integers to float
 
     Examples
     --------
@@ -2555,6 +2631,63 @@ add_newdoc('numpy.core.umath', 'power',
     >>> np.power(x1, x2)
     array([[ 0,  1,  8, 27, 16,  5],
            [ 0,  1,  8, 27, 16,  5]])
+
+    """)
+
+add_newdoc('numpy.core.umath', 'float_power',
+    """
+    First array elements raised to powers from second array, element-wise.
+
+    Raise each base in `x1` to the positionally-corresponding power in `x2`.
+    `x1` and `x2` must be broadcastable to the same shape. This differs from
+    the power function in that integers, float16, and float32  are promoted to
+    floats with a minimum precision of float64 so that the result is always
+    inexact.  The intent is that the function will return a usable result for
+    negative powers and seldom overflow for positive powers.
+
+    .. versionadded:: 1.12.0
+
+    Parameters
+    ----------
+    x1 : array_like
+        The bases.
+    x2 : array_like
+        The exponents.
+
+    Returns
+    -------
+    y : ndarray
+        The bases in `x1` raised to the exponents in `x2`.
+
+    See Also
+    --------
+    power : power function that preserves type
+
+    Examples
+    --------
+    Cube each element in a list.
+
+    >>> x1 = range(6)
+    >>> x1
+    [0, 1, 2, 3, 4, 5]
+    >>> np.float_power(x1, 3)
+    array([   0.,    1.,    8.,   27.,   64.,  125.])
+
+    Raise the bases to different exponents.
+
+    >>> x2 = [1.0, 2.0, 3.0, 3.0, 2.0, 1.0]
+    >>> np.float_power(x1, x2)
+    array([  0.,   1.,   8.,  27.,  16.,   5.])
+
+    The effect of broadcasting.
+
+    >>> x2 = np.array([[1, 2, 3, 3, 2, 1], [1, 2, 3, 3, 2, 1]])
+    >>> x2
+    array([[1, 2, 3, 3, 2, 1],
+           [1, 2, 3, 3, 2, 1]])
+    >>> np.float_power(x1, x2)
+    array([[  0.,   1.,   8.,  27.,  16.,   5.],
+           [  0.,   1.,   8.,  27.,  16.,   5.]])
 
     """)
 
@@ -2649,8 +2782,8 @@ add_newdoc('numpy.core.umath', 'reciprocal',
         This function is not designed to work with integers.
 
     For integer arguments with absolute value larger than 1 the result is
-    always zero because of the way Python handles integer division.
-    For integer zero the result is an overflow.
+    always zero because of the way Python handles integer division.  For
+    integer zero the result is an overflow.
 
     Examples
     --------
@@ -2665,7 +2798,10 @@ add_newdoc('numpy.core.umath', 'remainder',
     """
     Return element-wise remainder of division.
 
-    Computes ``x1 - floor(x1 / x2) * x2``.
+    Computes the remainder complementary to the `floor_divide` function.  It is
+    equivalent to the Python modulus operator``x1 % x2`` and has the same sign
+    as the divisor `x2`. It should not be confused with the Matlab(TM) ``rem``
+    function.
 
     Parameters
     ----------
@@ -2680,16 +2816,19 @@ add_newdoc('numpy.core.umath', 'remainder',
     Returns
     -------
     y : ndarray
-        The remainder of the quotient ``x1/x2``, element-wise. Returns a scalar
-        if both  `x1` and `x2` are scalars.
+        The element-wise remainder of the quotient ``floor_divide(x1, x2)``.
+        Returns a scalar if both  `x1` and `x2` are scalars.
 
     See Also
     --------
+    floor_divide : Equivalent of Python ``//`` operator.
+    fmod : Equivalent of the Matlab(TM) ``rem`` function.
     divide, floor
 
     Notes
     -----
-    Returns 0 when `x2` is 0 and both `x1` and `x2` are (arrays of) integers.
+    Returns 0 when `x2` is 0 and both `x1` and `x2` are (arrays of)
+    integers.
 
     Examples
     --------
@@ -2704,9 +2843,9 @@ add_newdoc('numpy.core.umath', 'right_shift',
     """
     Shift the bits of an integer to the right.
 
-    Bits are shifted to the right by removing `x2` bits at the right of `x1`.
-    Since the internal representation of numbers is in binary format, this
-    operation is equivalent to dividing `x1` by ``2**x2``.
+    Bits are shifted to the right `x2`.  Because the internal
+    representation of numbers is in binary format, this operation is
+    equivalent to dividing `x1` by ``2**x2``.
 
     Parameters
     ----------
@@ -2751,7 +2890,7 @@ add_newdoc('numpy.core.umath', 'rint',
 
     Returns
     -------
-    out : {ndarray, scalar}
+    out : ndarray or scalar
         Output array is same shape and type as `x`.
 
     See Also
@@ -2770,7 +2909,13 @@ add_newdoc('numpy.core.umath', 'sign',
     """
     Returns an element-wise indication of the sign of a number.
 
-    The `sign` function returns ``-1 if x < 0, 0 if x==0, 1 if x > 0``.
+    The `sign` function returns ``-1 if x < 0, 0 if x==0, 1 if x > 0``.  nan
+    is returned for nan inputs.
+
+    For complex inputs, the `sign` function returns
+    ``sign(x.real) + 0j if x.real != 0 else sign(x.imag) + 0j``.
+
+    complex(nan, 0) is returned for complex nan inputs.
 
     Parameters
     ----------
@@ -2782,12 +2927,20 @@ add_newdoc('numpy.core.umath', 'sign',
     y : ndarray
       The sign of `x`.
 
+    Notes
+    -----
+    There is more than one definition of sign in common use for complex
+    numbers.  The definition used here is equivalent to :math:`x/\\sqrt{x*x}`
+    which is different from a common alternative, :math:`x/|x|`.
+
     Examples
     --------
     >>> np.sign([-5., 4.5])
     array([-1.,  1.])
     >>> np.sign(0)
     0
+    >>> np.sign(5-2j)
+    (1+0j)
 
     """)
 
@@ -2797,12 +2950,11 @@ add_newdoc('numpy.core.umath', 'signbit',
 
     Parameters
     ----------
-    x: array_like
+    x : array_like
         The input value(s).
     out : ndarray, optional
-        Array into which the output is placed. Its type is preserved
-        and it must be of the right shape to hold the output.
-        See `doc.ufuncs`.
+        Array into which the output is placed. Its type is preserved and it
+        must be of the right shape to hold the output.  See `doc.ufuncs`.
 
     Returns
     -------
@@ -2828,9 +2980,9 @@ add_newdoc('numpy.core.umath', 'copysign',
 
     Parameters
     ----------
-    x1: array_like
+    x1 : array_like
         Values to change the sign of.
-    x2: array_like
+    x2 : array_like
         The sign of `x2` is copied to `x1`.
     out : ndarray, optional
         Array into which the output is placed. Its type is preserved and it
@@ -2859,8 +3011,7 @@ add_newdoc('numpy.core.umath', 'copysign',
 
 add_newdoc('numpy.core.umath', 'nextafter',
     """
-    Return the next representable floating-point value after x1 in the direction
-    of x2 element-wise.
+    Return the next floating-point value after x1 towards x2, element-wise.
 
     Parameters
     ----------
@@ -2893,7 +3044,7 @@ add_newdoc('numpy.core.umath', 'spacing',
 
     Parameters
     ----------
-    x1: array_like
+    x1 : array_like
         Values to find the spacing of.
 
     Returns
@@ -2908,7 +3059,7 @@ add_newdoc('numpy.core.umath', 'spacing',
     should not be any representable number between ``x + spacing(x)`` and
     x for any finite x.
 
-    Spacing of +- inf and nan is nan.
+    Spacing of +- inf and NaN is NaN.
 
     Examples
     --------
@@ -2937,17 +3088,17 @@ add_newdoc('numpy.core.umath', 'sin',
 
     Notes
     -----
-    The sine is one of the fundamental functions of trigonometry
-    (the mathematical study of triangles).  Consider a circle of radius
-    1 centered on the origin.  A ray comes in from the :math:`+x` axis,
-    makes an angle at the origin (measured counter-clockwise from that
-    axis), and departs from the origin.  The :math:`y` coordinate of
-    the outgoing ray's intersection with the unit circle is the sine
-    of that angle.  It ranges from -1 for :math:`x=3\\pi / 2` to
-    +1 for :math:`\\pi / 2.`  The function has zeroes where the angle is
-    a multiple of :math:`\\pi`.  Sines of angles between :math:`\\pi` and
-    :math:`2\\pi` are negative.  The numerous properties of the sine and
-    related functions are included in any standard trigonometry text.
+    The sine is one of the fundamental functions of trigonometry (the
+    mathematical study of triangles).  Consider a circle of radius 1
+    centered on the origin.  A ray comes in from the :math:`+x` axis, makes
+    an angle at the origin (measured counter-clockwise from that axis), and
+    departs from the origin.  The :math:`y` coordinate of the outgoing
+    ray's intersection with the unit circle is the sine of that angle.  It
+    ranges from -1 for :math:`x=3\\pi / 2` to +1 for :math:`\\pi / 2.`  The
+    function has zeroes where the angle is a multiple of :math:`\\pi`.
+    Sines of angles between :math:`\\pi` and :math:`2\\pi` are negative.
+    The numerous properties of the sine and related functions are included
+    in any standard trigonometry text.
 
     Examples
     --------
@@ -3061,8 +3212,8 @@ add_newdoc('numpy.core.umath', 'sqrt',
     -----
     *sqrt* has--consistent with common convention--as its branch cut the
     real "interval" [`-inf`, 0), and is continuous from above on it.
-    (A branch cut is a curve in the complex plane across which a given
-    complex function fails to be continuous.)
+    A branch cut is a curve in the complex plane across which a given
+    complex function fails to be continuous.
 
     Examples
     --------
@@ -3074,6 +3225,35 @@ add_newdoc('numpy.core.umath', 'sqrt',
 
     >>> np.sqrt([4, -1, numpy.inf])
     array([  2.,  NaN,  Inf])
+
+    """)
+
+add_newdoc('numpy.core.umath', 'cbrt',
+    """
+    Return the cube-root of an array, element-wise.
+
+    .. versionadded:: 1.10.0
+
+    Parameters
+    ----------
+    x : array_like
+        The values whose cube-roots are required.
+    out : ndarray, optional
+        Alternate array object in which to put the result; if provided, it
+        must have the same shape as `x`
+
+    Returns
+    -------
+    y : ndarray
+        An array of the same shape as `x`, containing the cube
+        cube-root of each element in `x`.
+        If `out` was provided, `y` is a reference to it.
+
+
+    Examples
+    --------
+    >>> np.cbrt([1,8,27])
+    array([ 1.,  2.,  3.])
 
     """)
 
@@ -3195,8 +3375,7 @@ add_newdoc('numpy.core.umath', 'tanh',
     """
     Compute hyperbolic tangent element-wise.
 
-    Equivalent to ``np.sinh(x)/np.cosh(x)`` or
-    ``-1j * np.tan(1j*x)``.
+    Equivalent to ``np.sinh(x)/np.cosh(x)`` or ``-1j * np.tan(1j*x)``.
 
     Parameters
     ----------
@@ -3270,10 +3449,10 @@ add_newdoc('numpy.core.umath', 'true_divide',
 
     Notes
     -----
-    The floor division operator ``//`` was added in Python 2.2 making ``//``
-    and ``/`` equivalent operators.  The default floor division operation of
-    ``/`` can be replaced by true division with
-    ``from __future__ import division``.
+    The floor division operator ``//`` was added in Python 2.2 making
+    ``//`` and ``/`` equivalent operators.  The default floor division
+    operation of ``/`` can be replaced by true division with ``from
+    __future__ import division``.
 
     In Python 3.0, ``//`` is the floor division operator and ``/`` the
     true division operator.  The ``true_divide(x1, x2)`` function is
@@ -3295,5 +3474,93 @@ add_newdoc('numpy.core.umath', 'true_divide',
     array([ 0.  ,  0.25,  0.5 ,  0.75,  1.  ])
     >>> x//4
     array([0, 0, 0, 0, 1])
+
+    """)
+
+add_newdoc('numpy.core.umath', 'frexp',
+    """
+    Decompose the elements of x into mantissa and twos exponent.
+
+    Returns (`mantissa`, `exponent`), where `x = mantissa * 2**exponent``.
+    The mantissa is lies in the open interval(-1, 1), while the twos
+    exponent is a signed integer.
+
+    Parameters
+    ----------
+    x : array_like
+        Array of numbers to be decomposed.
+    out1 : ndarray, optional
+        Output array for the mantissa. Must have the same shape as `x`.
+    out2 : ndarray, optional
+        Output array for the exponent. Must have the same shape as `x`.
+
+    Returns
+    -------
+    (mantissa, exponent) : tuple of ndarrays, (float, int)
+        `mantissa` is a float array with values between -1 and 1.
+        `exponent` is an int array which represents the exponent of 2.
+
+    See Also
+    --------
+    ldexp : Compute ``y = x1 * 2**x2``, the inverse of `frexp`.
+
+    Notes
+    -----
+    Complex dtypes are not supported, they will raise a TypeError.
+
+    Examples
+    --------
+    >>> x = np.arange(9)
+    >>> y1, y2 = np.frexp(x)
+    >>> y1
+    array([ 0.   ,  0.5  ,  0.5  ,  0.75 ,  0.5  ,  0.625,  0.75 ,  0.875,
+            0.5  ])
+    >>> y2
+    array([0, 1, 2, 2, 3, 3, 3, 3, 4])
+    >>> y1 * 2**y2
+    array([ 0.,  1.,  2.,  3.,  4.,  5.,  6.,  7.,  8.])
+
+    """)
+
+add_newdoc('numpy.core.umath', 'ldexp',
+    """
+    Returns x1 * 2**x2, element-wise.
+
+    The mantissas `x1` and twos exponents `x2` are used to construct
+    floating point numbers ``x1 * 2**x2``.
+
+    Parameters
+    ----------
+    x1 : array_like
+        Array of multipliers.
+    x2 : array_like, int
+        Array of twos exponents.
+    out : ndarray, optional
+        Output array for the result.
+
+    Returns
+    -------
+    y : ndarray or scalar
+        The result of ``x1 * 2**x2``.
+
+    See Also
+    --------
+    frexp : Return (y1, y2) from ``x = y1 * 2**y2``, inverse to `ldexp`.
+
+    Notes
+    -----
+    Complex dtypes are not supported, they will raise a TypeError.
+
+    `ldexp` is useful as the inverse of `frexp`, if used by itself it is
+    more clear to simply use the expression ``x1 * 2**x2``.
+
+    Examples
+    --------
+    >>> np.ldexp(5, np.arange(4))
+    array([  5.,  10.,  20.,  40.], dtype=float32)
+
+    >>> x = np.arange(6)
+    >>> np.ldexp(*np.frexp(x))
+    array([ 0.,  1.,  2.,  3.,  4.,  5.])
 
     """)

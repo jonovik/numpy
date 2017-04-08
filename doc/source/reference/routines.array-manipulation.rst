@@ -3,6 +3,13 @@ Array manipulation routines
 
 .. currentmodule:: numpy
 
+Basic operations
+================
+.. autosummary::
+   :toctree: generated/
+
+    copyto
+
 Changing array shape
 ====================
 .. autosummary::
@@ -19,6 +26,7 @@ Transpose-like operations
 .. autosummary::
    :toctree: generated/
 
+   moveaxis
    rollaxis
    swapaxes
    ndarray.T
@@ -33,6 +41,7 @@ Changing number of dimensions
    atleast_2d
    atleast_3d
    broadcast
+   broadcast_to
    broadcast_arrays
    expand_dims
    squeeze
@@ -47,6 +56,8 @@ Changing kind of array
    asmatrix
    asfarray
    asfortranarray
+   ascontiguousarray
+   asarray_chkfinite
    asscalar
    require
 
@@ -55,8 +66,9 @@ Joining arrays
 .. autosummary::
    :toctree: generated/
 
-   column_stack
    concatenate
+   stack
+   column_stack
    dstack
    hstack
    vstack
@@ -66,10 +78,10 @@ Splitting arrays
 .. autosummary::
    :toctree: generated/
 
+   split
    array_split
    dsplit
    hsplit
-   split
    vsplit
 
 Tiling arrays
@@ -97,6 +109,7 @@ Rearranging elements
 .. autosummary::
    :toctree: generated/
 
+   flip
    fliplr
    flipud
    reshape

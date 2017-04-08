@@ -1,34 +1,38 @@
-#A place for code to be called from C-code
-#  that implements more complicated stuff.
+"""
+A place for code to be called from core C-code.
+
+Some things are more easily handled Python.
+
+"""
+from __future__ import division, absolute_import, print_function
 
 import re
 import sys
-import warnings
 
-from numpy.compat import asbytes, bytes
+from numpy.compat import basestring
+from .multiarray import dtype, array, ndarray
+import ctypes
+from .numerictypes import object_
 
 if (sys.byteorder == 'little'):
-    _nbo = asbytes('<')
+    _nbo = b'<'
 else:
-    _nbo = asbytes('>')
+    _nbo = b'>'
 
-def _makenames_list(adict):
-    from multiarray import dtype
+def _makenames_list(adict, align):
     allfields = []
-    fnames = adict.keys()
+    fnames = list(adict.keys())
     for fname in fnames:
         obj = adict[fname]
         n = len(obj)
-        if not isinstance(obj, tuple) or n not in [2,3]:
+        if not isinstance(obj, tuple) or n not in [2, 3]:
             raise ValueError("entry not a 2- or 3- tuple")
         if (n > 2) and (obj[2] == fname):
             continue
         num = int(obj[1])
         if (num < 0):
             raise ValueError("invalid offset.")
-        format = dtype(obj[0])
-        if (format.itemsize == 0):
-            raise ValueError("all itemsizes must be fixed.")
+        format = dtype(obj[0], align=align)
         if (n > 2):
             title = obj[2]
         else:
@@ -47,13 +51,12 @@ def _makenames_list(adict):
 #  a dictionary without "names" and "formats"
 #  fields is used as a data-type descriptor.
 def _usefields(adict, align):
-    from multiarray import dtype
     try:
         names = adict[-1]
     except KeyError:
         names = None
     if names is None:
-        names, formats, offsets, titles = _makenames_list(adict)
+        names, formats, offsets, titles = _makenames_list(adict, align)
     else:
         formats = []
         offsets = []
@@ -67,10 +70,10 @@ def _usefields(adict, align):
             else:
                 titles.append(None)
 
-    return dtype({"names" : names,
-                  "formats" : formats,
-                  "offsets" : offsets,
-                  "titles" : titles}, align)
+    return dtype({"names": names,
+                  "formats": formats,
+                  "offsets": offsets,
+                  "titles": titles}, align)
 
 
 # construct an array_protocol descriptor list
@@ -80,7 +83,6 @@ def _usefields(adict, align):
 #  a simple typestring
 
 def _array_descr(descriptor):
-    from multiarray import METADATA_DTSTR
     fields = descriptor.fields
     if fields is None:
         subdtype = descriptor.subdtype
@@ -89,12 +91,12 @@ def _array_descr(descriptor):
                 return descriptor.str
             else:
                 new = descriptor.metadata.copy()
-                # Eliminate any key related to internal implementation
-                _ = new.pop(METADATA_DTSTR, None)
-                return (descriptor.str, new)
+                if new:
+                    return (descriptor.str, new)
+                else:
+                    return descriptor.str
         else:
             return (_array_descr(subdtype[0]), subdtype[1])
-
 
     names = descriptor.names
     ordered_fields = [fields[x] + (x,) for x in names]
@@ -103,10 +105,10 @@ def _array_descr(descriptor):
     for field in ordered_fields:
         if field[1] > offset:
             num = field[1] - offset
-            result.append(('','|V%d' % num))
+            result.append(('', '|V%d' % num))
             offset += num
         if len(field) > 3:
-            name = (field[2],field[3])
+            name = (field[2], field[3])
         else:
             name = field[2]
         if field[0].subdtype:
@@ -117,6 +119,10 @@ def _array_descr(descriptor):
         offset += field[0].itemsize
         result.append(tup)
 
+    if descriptor.itemsize > offset:
+        num = descriptor.itemsize - offset
+        result.append(('', '|V%d' % num))
+
     return result
 
 # Build a new array from the information in a pickle.
@@ -125,110 +131,62 @@ def _array_descr(descriptor):
 # so don't remove the name here, or you'll
 # break backward compatibilty.
 def _reconstruct(subtype, shape, dtype):
-    from multiarray import ndarray
     return ndarray.__new__(subtype, shape, dtype)
 
 
-# format_re and _split were taken from numarray by J. Todd Miller
+# format_re was originally from numarray by J. Todd Miller
 
-def _split(input):
-    """Split the input formats string into field formats without splitting
-       the tuple used to specify multi-dimensional arrays."""
-
-    newlist = []
-    hold = asbytes('')
-
-    listinput = input.split(asbytes(','))
-    for element in listinput:
-        if hold != asbytes(''):
-            item = hold + asbytes(',') + element
-        else:
-            item = element
-        left = item.count(asbytes('('))
-        right = item.count(asbytes(')'))
-
-        # if the parenthesis is not balanced, hold the string
-        if left > right :
-            hold = item
-
-        # when balanced, append to the output list and reset the hold
-        elif left == right:
-            newlist.append(item.strip())
-            hold = asbytes('')
-
-        # too many close parenthesis is unacceptable
-        else:
-            raise SyntaxError(item)
-
-    # if there is string left over in hold
-    if hold != asbytes(''):
-        raise SyntaxError(hold)
-
-    return newlist
-
-format_datetime = re.compile(asbytes(r"""
-     (?P<typecode>M8|m8|datetime64|timedelta64)
-     ([[]
-       ((?P<num>\d+)?
-       (?P<baseunit>Y|M|W|B|D|h|m|s|ms|us|ns|ps|fs|as)
-       (/(?P<den>\d+))?
-      []])
-     (//(?P<events>\d+))?)?"""), re.X)
-
-# Return (baseunit, num, den, events), datetime
-#  from date-time string
-def _datetimestring(astr):
-    res = format_datetime.match(astr)
-    if res is None:
-        raise ValueError("Incorrect date-time string.")
-    typecode = res.group('typecode')
-    datetime = (typecode == asbytes('M8') or typecode == asbytes('datetime64'))
-    defaults = [asbytes('us'), 1, 1, 1]
-    names = ['baseunit', 'num', 'den', 'events']
-    func = [bytes, int, int, int]
-    dt_tuple = []
-    for i, name in enumerate(names):
-        value = res.group(name)
-        if value:
-            dt_tuple.append(func[i](value))
-        else:
-            dt_tuple.append(defaults[i])
-
-    return tuple(dt_tuple), datetime
-
-format_re = re.compile(asbytes(r'(?P<order1>[<>|=]?)(?P<repeats> *[(]?[ ,0-9]*[)]? *)(?P<order2>[<>|=]?)(?P<dtype>[A-Za-z0-9.]*)'))
+format_re = re.compile(br'(?P<order1>[<>|=]?)'
+                       br'(?P<repeats> *[(]?[ ,0-9L]*[)]? *)'
+                       br'(?P<order2>[<>|=]?)'
+                       br'(?P<dtype>[A-Za-z0-9.?]*(?:\[[a-zA-Z0-9,.]+\])?)')
+sep_re = re.compile(br'\s*,\s*')
+space_re = re.compile(br'\s+$')
 
 # astr is a string (perhaps comma separated)
 
-_convorder = {asbytes('='): _nbo}
+_convorder = {b'=': _nbo}
 
 def _commastring(astr):
-    res = _split(astr)
-    if (len(res)) < 1:
-        raise ValueError("unrecognized formant")
+    startindex = 0
     result = []
-    for k,item in enumerate(res):
-        # convert item
+    while startindex < len(astr):
+        mo = format_re.match(astr, pos=startindex)
         try:
-            (order1, repeats, order2, dtype) = format_re.match(item).groups()
+            (order1, repeats, order2, dtype) = mo.groups()
         except (TypeError, AttributeError):
-            raise ValueError('format %s is not recognized' % item)
+            raise ValueError('format number %d of "%s" is not recognized' %
+                                            (len(result)+1, astr))
+        startindex = mo.end()
+        # Separator or ending padding
+        if startindex < len(astr):
+            if space_re.match(astr, pos=startindex):
+                startindex = len(astr)
+            else:
+                mo = sep_re.match(astr, pos=startindex)
+                if not mo:
+                    raise ValueError(
+                        'format number %d of "%s" is not recognized' %
+                        (len(result)+1, astr))
+                startindex = mo.end()
 
-        if order2 == asbytes(''):
+        if order2 == b'':
             order = order1
-        elif order1 == asbytes(''):
+        elif order1 == b'':
             order = order2
         else:
             order1 = _convorder.get(order1, order1)
             order2 = _convorder.get(order2, order2)
             if (order1 != order2):
-                raise ValueError('in-consistent byte-order specification %s and %s' % (order1, order2))
+                raise ValueError(
+                    'inconsistent byte-order specification %s and %s' %
+                    (order1, order2))
             order = order1
 
-        if order in [asbytes('|'), asbytes('='), _nbo]:
-            order = asbytes('')
+        if order in [b'|', b'=', _nbo]:
+            order = b''
         dtype = order + dtype
-        if (repeats == asbytes('')):
+        if (repeats == b''):
             newitem = dtype
         else:
             newitem = (dtype, eval(repeats))
@@ -237,12 +195,10 @@ def _commastring(astr):
     return result
 
 def _getintp_ctype():
-    from multiarray import dtype
     val = _getintp_ctype.cache
     if val is not None:
         return val
     char = dtype('p').char
-    import ctypes
     if (char == 'i'):
         val = ctypes.c_int
     elif char == 'l':
@@ -267,7 +223,6 @@ class _missing_ctypes(object):
 class _ctypes(object):
     def __init__(self, array, ptr=None):
         try:
-            import ctypes
             self._ctypes = ctypes
         except ImportError:
             self._ctypes = _missing_ctypes()
@@ -330,35 +285,91 @@ def _newnames(datatype, order):
         return tuple(list(order) + nameslist)
     raise ValueError("unsupported order value: %s" % (order,))
 
-# Given an array with fields and a sequence of field names
-# construct a new array with just those fields copied over
-def _index_fields(ary, fields):
-    from multiarray import empty, dtype
+def _copy_fields(ary):
+    """Return copy of structured array with padding between fields removed.
+
+    Parameters
+    ----------
+    ary : ndarray
+       Structured array from which to remove padding bytes
+
+    Returns
+    -------
+    ary_copy : ndarray
+       Copy of ary with padding bytes removed
+    """
     dt = ary.dtype
-    new_dtype = [(name, dt[name]) for name in dt.names if name in fields]
-    future_dtype = [(name, dt[name]) for name in fields if name in dt.names]
-    if not new_dtype == future_dtype:
-        depdoc = "Out of order field selection on recarrays currently returns \
-fields in order. This behavior is deprecated in numpy 1.5 and will change in \
-2.0. See ticket #1431."
-        warnings.warn(depdoc, DeprecationWarning)
-    if ary.flags.f_contiguous:
-        order = 'F'
-    else:
-        order = 'C'
+    copy_dtype = {'names': dt.names,
+                  'formats': [dt.fields[name][0] for name in dt.names]}
+    return array(ary, dtype=copy_dtype, copy=True)
 
-    newarray = empty(ary.shape, dtype=new_dtype, order=order)
+def _getfield_is_safe(oldtype, newtype, offset):
+    """ Checks safety of getfield for object arrays.
 
-    for name in fields:
-        newarray[name] = ary[name]
+    As in _view_is_safe, we need to check that memory containing objects is not
+    reinterpreted as a non-object datatype and vice versa.
 
-    return newarray
+    Parameters
+    ----------
+    oldtype : data-type
+        Data type of the original ndarray.
+    newtype : data-type
+        Data type of the field being accessed by ndarray.getfield
+    offset : int
+        Offset of the field being accessed by ndarray.getfield
+
+    Raises
+    ------
+    TypeError
+        If the field access is invalid
+
+    """
+    if newtype.hasobject or oldtype.hasobject:
+        if offset == 0 and newtype == oldtype:
+            return
+        if oldtype.names:
+            for name in oldtype.names:
+                if (oldtype.fields[name][1] == offset and
+                        oldtype.fields[name][0] == newtype):
+                    return
+        raise TypeError("Cannot get/set field of an object array")
+    return
+
+def _view_is_safe(oldtype, newtype):
+    """ Checks safety of a view involving object arrays, for example when
+    doing::
+
+        np.zeros(10, dtype=oldtype).view(newtype)
+
+    Parameters
+    ----------
+    oldtype : data-type
+        Data type of original ndarray
+    newtype : data-type
+        Data type of the view
+
+    Raises
+    ------
+    TypeError
+        If the new type is incompatible with the old type.
+
+    """
+
+    # if the types are equivalent, there is no problem.
+    # for example: dtype((np.record, 'i4,i4')) == dtype((np.void, 'i4,i4'))
+    if oldtype == newtype:
+        return
+
+    if newtype.hasobject or oldtype.hasobject:
+        raise TypeError("Cannot change data-type for object array.")
+    return
 
 # Given a string containing a PEP 3118 format specifier,
-# construct a Numpy dtype
+# construct a NumPy dtype
 
 _pep3118_native_map = {
     '?': '?',
+    'c': 'S1',
     'b': 'b',
     'B': 'B',
     'h': 'h',
@@ -369,6 +380,7 @@ _pep3118_native_map = {
     'L': 'L',
     'q': 'q',
     'Q': 'Q',
+    'e': 'e',
     'f': 'f',
     'd': 'd',
     'g': 'g',
@@ -378,12 +390,13 @@ _pep3118_native_map = {
     's': 'S',
     'w': 'U',
     'O': 'O',
-    'x': 'V', # padding
+    'x': 'V',  # padding
 }
 _pep3118_native_typechars = ''.join(_pep3118_native_map.keys())
 
 _pep3118_standard_map = {
     '?': '?',
+    'c': 'S1',
     'b': 'b',
     'B': 'B',
     'h': 'i2',
@@ -394,6 +407,7 @@ _pep3118_standard_map = {
     'L': 'u4',
     'q': 'i8',
     'Q': 'u8',
+    'e': 'f2',
     'f': 'f',
     'd': 'd',
     'Zf': 'F',
@@ -401,24 +415,23 @@ _pep3118_standard_map = {
     's': 'S',
     'w': 'U',
     'O': 'O',
-    'x': 'V', # padding
+    'x': 'V',  # padding
 }
 _pep3118_standard_typechars = ''.join(_pep3118_standard_map.keys())
 
 def _dtype_from_pep3118(spec, byteorder='@', is_subdtype=False):
-    from numpy.core.multiarray import dtype
-
     fields = {}
     offset = 0
     explicit_name = False
     this_explicit_name = False
     common_alignment = 1
     is_padding = False
-    last_offset = 0
 
     dummy_name_index = [0]
+
     def next_dummy_name():
         dummy_name_index[0] += 1
+
     def get_dummy_name():
         while True:
             name = 'f%d' % dummy_name_index[0]
@@ -461,7 +474,7 @@ def _dtype_from_pep3118(spec, byteorder='@', is_subdtype=False):
         itemsize = 1
         if spec[0].isdigit():
             j = 1
-            for j in xrange(1, len(spec)):
+            for j in range(1, len(spec)):
                 if not spec[j].isdigit():
                     break
             itemsize = int(spec[:j])
@@ -542,7 +555,6 @@ def _dtype_from_pep3118(spec, byteorder='@', is_subdtype=False):
                 raise RuntimeError("Duplicate field name '%s' in PEP3118 format"
                                    % name)
             fields[name] = (value, offset)
-            last_offset = offset
             if not this_explicit_name:
                 next_dummy_name()
 
@@ -552,8 +564,8 @@ def _dtype_from_pep3118(spec, byteorder='@', is_subdtype=False):
         offset += extra_offset
 
     # Check if this was a simple 1-item type
-    if len(fields.keys()) == 1 and not explicit_name and fields['f0'][1] == 0 \
-           and not is_subdtype:
+    if (len(fields) == 1 and not explicit_name and
+            fields['f0'][1] == 0 and not is_subdtype):
         ret = fields['f0'][0]
     else:
         ret = dtype(fields)
@@ -573,15 +585,13 @@ def _dtype_from_pep3118(spec, byteorder='@', is_subdtype=False):
 
 def _add_trailing_padding(value, padding):
     """Inject the specified number of padding bytes at the end of a dtype"""
-    from numpy.core.multiarray import dtype
-
     if value.fields is None:
         vfields = {'f0': (value, 0)}
     else:
         vfields = dict(value.fields)
 
-    if value.names and value.names[-1] == '' and \
-           value[''].char == 'V':
+    if (value.names and value.names[-1] == '' and
+           value[''].char == 'V'):
         # A trailing padding field is already present
         vfields[''] = ('V%d' % (vfields[''][0].itemsize + padding),
                        vfields[''][1])
@@ -613,5 +623,25 @@ def _prod(a):
 def _gcd(a, b):
     """Calculate the greatest common divisor of a and b"""
     while b:
-        a, b = b, a%b
+        a, b = b, a % b
     return a
+
+# Exception used in shares_memory()
+class TooHardError(RuntimeError):
+    pass
+
+class AxisError(ValueError, IndexError):
+    """ Axis supplied was invalid. """
+    def __init__(self, axis, ndim=None, msg_prefix=None):
+        # single-argument form just delegates to base class
+        if ndim is None and msg_prefix is None:
+            msg = axis
+
+        # do the string formatting here, to save work in the C code
+        else:
+            msg = ("axis {} is out of bounds for array of dimension {}"
+                   .format(axis, ndim))
+            if msg_prefix is not None:
+                msg = "{}: {}".format(msg_prefix, msg)
+
+        super(AxisError, self).__init__(msg)

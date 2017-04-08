@@ -1,6 +1,8 @@
 """
 Functions to operate on polynomials.
+
 """
+from __future__ import division, absolute_import, print_function
 
 __all__ = ['poly', 'roots', 'polyint', 'polyder', 'polyadd',
            'polysub', 'polymul', 'polydiv', 'polyval', 'poly1d',
@@ -10,11 +12,12 @@ import re
 import warnings
 import numpy.core.numeric as NX
 
-from numpy.core import isscalar, abs, finfo, atleast_1d, hstack
+from numpy.core import (isscalar, abs, finfo, atleast_1d, hstack, dot, array,
+                        ones)
 from numpy.lib.twodim_base import diag, vander
-from numpy.lib.function_base import trim_zeros, sort_complex
-from numpy.lib.type_check import iscomplex, real, imag
-from numpy.linalg import eigvals, lstsq
+from numpy.lib.function_base import trim_zeros
+from numpy.lib.type_check import iscomplex, real, imag, mintypecode
+from numpy.linalg import eigvals, lstsq, inv
 
 class RankWarning(UserWarning):
     """
@@ -58,7 +61,7 @@ def poly(seq_of_zeros):
 
     See Also
     --------
-    polyval : Evaluate a polynomial at a point.
+    polyval : Compute polynomial values.
     roots : Return the roots of a polynomial.
     polyfit : Least squares polynomial fit.
     poly1d : A one-dimensional polynomial class.
@@ -93,12 +96,12 @@ def poly(seq_of_zeros):
 
     >>> np.poly((0, 0, 0)) # Multiple root example
     array([1, 0, 0, 0])
-    
+
     The line above represents z**3 + 0*z**2 + 0*z + 0.
 
     >>> np.poly((-1./2, 0, 1./2))
     array([ 1.  ,  0.  , -0.25,  0.  ])
-    
+
     The line above represents z**3 - z/4
 
     >>> np.poly((np.random.random(1.)[0], 0, np.random.random(1.)[0]))
@@ -120,28 +123,29 @@ def poly(seq_of_zeros):
     """
     seq_of_zeros = atleast_1d(seq_of_zeros)
     sh = seq_of_zeros.shape
+
     if len(sh) == 2 and sh[0] == sh[1] and sh[0] != 0:
         seq_of_zeros = eigvals(seq_of_zeros)
     elif len(sh) == 1:
-        pass
+        dt = seq_of_zeros.dtype
+        # Let object arrays slip through, e.g. for arbitrary precision
+        if dt != object:
+            seq_of_zeros = seq_of_zeros.astype(mintypecode(dt.char))
     else:
-        raise ValueError, "input must be 1d or square 2d array."
+        raise ValueError("input must be 1d or non-empty square 2d array.")
 
     if len(seq_of_zeros) == 0:
         return 1.0
-
-    a = [1]
+    dt = seq_of_zeros.dtype
+    a = ones((1,), dtype=dt)
     for k in range(len(seq_of_zeros)):
-        a = NX.convolve(a, [1, -seq_of_zeros[k]], mode='full')
+        a = NX.convolve(a, array([1, -seq_of_zeros[k]], dtype=dt),
+                        mode='full')
 
     if issubclass(a.dtype.type, NX.complexfloating):
         # if complex roots are all complex conjugates, the roots are real.
         roots = NX.asarray(seq_of_zeros, complex)
-        pos_roots = sort_complex(NX.compress(roots.imag > 0, roots))
-        neg_roots = NX.conjugate(sort_complex(
-                                        NX.compress(roots.imag < 0,roots)))
-        if (len(pos_roots) == len(neg_roots) and
-            NX.alltrue(neg_roots == pos_roots)):
+        if NX.all(NX.sort(roots) == NX.sort(roots.conjugate())):
             a = a.real.copy()
 
     return a
@@ -151,47 +155,45 @@ def roots(p):
     Return the roots of a polynomial with coefficients given in p.
 
     The values in the rank-1 array `p` are coefficients of a polynomial.
-    If the length of `p` is n+1 then the polynomial is described by
-    p[0] * x**n + p[1] * x**(n-1) + ... + p[n-1]*x + p[n]
+    If the length of `p` is n+1 then the polynomial is described by::
+
+      p[0] * x**n + p[1] * x**(n-1) + ... + p[n-1]*x + p[n]
 
     Parameters
     ----------
-    p : array_like of shape(M,)
-        Rank-1 array of polynomial co-efficients.
+    p : array_like
+        Rank-1 array of polynomial coefficients.
 
     Returns
     -------
     out : ndarray
-        An array containing the complex roots of the polynomial.
+        An array containing the roots of the polynomial.
 
     Raises
     ------
-    ValueError:
+    ValueError
         When `p` cannot be converted to a rank-1 array.
 
     See also
     --------
-
-    poly : Find the coefficients of a polynomial with
-         a given sequence of roots.
-    polyval : Evaluate a polynomial at a point.
+    poly : Find the coefficients of a polynomial with a given sequence
+           of roots.
+    polyval : Compute polynomial values.
     polyfit : Least squares polynomial fit.
     poly1d : A one-dimensional polynomial class.
 
     Notes
     -----
-
     The algorithm relies on computing the eigenvalues of the
     companion matrix [1]_.
 
     References
     ----------
-    .. [1] Wikipedia, "Companion matrix",
-           http://en.wikipedia.org/wiki/Companion_matrix
+    .. [1] R. A. Horn & C. R. Johnson, *Matrix Analysis*.  Cambridge, UK:
+        Cambridge University Press, 1999, pp. 146-7.
 
     Examples
     --------
-
     >>> coeff = [3.2, 2, 1]
     >>> np.roots(coeff)
     array([-0.3125+0.46351241j, -0.3125-0.46351241j])
@@ -199,8 +201,8 @@ def roots(p):
     """
     # If input is scalar, this makes it an array
     p = atleast_1d(p)
-    if len(p.shape) != 1:
-        raise ValueError,"Input must be a rank-1 array."
+    if p.ndim != 1:
+        raise ValueError("Input must be a rank-1 array.")
 
     # find non-zero array entries
     non_zero = NX.nonzero(NX.ravel(p))[0]
@@ -223,7 +225,7 @@ def roots(p):
     if N > 1:
         # build companion matrix and find its eigenvalues (the roots)
         A = diag(NX.ones((N-2,), p.dtype), -1)
-        A[0, :] = -p[1:] / p[0]
+        A[0,:] = -p[1:] / p[0]
         roots = eigvals(A)
     else:
         roots = NX.array([])
@@ -247,12 +249,12 @@ def polyint(p, m=1, k=None):
 
     Parameters
     ----------
-    p : {array_like, poly1d}
+    p : array_like or poly1d
         Polynomial to differentiate.
         A sequence is interpreted as polynomial coefficients, see `poly1d`.
     m : int, optional
         Order of the antiderivative. (Default: 1)
-    k : {None, list of `m` scalars, scalar}, optional
+    k : list of `m` scalars or scalar, optional
         Integration constants. They are given in the order of integration:
         those corresponding to highest-order terms come first.
 
@@ -301,15 +303,15 @@ def polyint(p, m=1, k=None):
     """
     m = int(m)
     if m < 0:
-        raise ValueError, "Order of integral must be positive (see polyder)"
+        raise ValueError("Order of integral must be positive (see polyder)")
     if k is None:
         k = NX.zeros(m, float)
     k = atleast_1d(k)
     if len(k) == 1 and m > 1:
         k = k[0]*NX.ones(m, float)
     if len(k) < m:
-        raise ValueError, \
-              "k must be a scalar or a rank-1 array of length 1 or >m."
+        raise ValueError(
+              "k must be a scalar or a rank-1 array of length 1 or >m.")
 
     truepoly = isinstance(p, poly1d)
     p = NX.asarray(p)
@@ -379,7 +381,7 @@ def polyder(p, m=1):
     """
     m = int(m)
     if m < 0:
-        raise ValueError, "Order of derivative must be positive (see polyint)"
+        raise ValueError("Order of derivative must be positive (see polyint)")
 
     truepoly = isinstance(p, poly1d)
     p = NX.asarray(p)
@@ -393,7 +395,7 @@ def polyder(p, m=1):
         val = poly1d(val)
     return val
 
-def polyfit(x, y, deg, rcond=None, full=False):
+def polyfit(x, y, deg, rcond=None, full=False, w=None, cov=False):
     """
     Least squares polynomial fit.
 
@@ -412,26 +414,40 @@ def polyfit(x, y, deg, rcond=None, full=False):
     deg : int
         Degree of the fitting polynomial
     rcond : float, optional
-        Relative condition number of the fit. Singular values smaller than this
-        relative to the largest singular value will be ignored. The default
-        value is len(x)*eps, where eps is the relative precision of the float
-        type, about 2e-16 in most cases.
+        Relative condition number of the fit. Singular values smaller than
+        this relative to the largest singular value will be ignored. The
+        default value is len(x)*eps, where eps is the relative precision of
+        the float type, about 2e-16 in most cases.
     full : bool, optional
-        Switch determining nature of return value. When it is
-        False (the default) just the coefficients are returned, when True
-        diagnostic information from the singular value decomposition is also
-        returned.
+        Switch determining nature of return value. When it is False (the
+        default) just the coefficients are returned, when True diagnostic
+        information from the singular value decomposition is also returned.
+    w : array_like, shape (M,), optional
+        Weights to apply to the y-coordinates of the sample points. For
+        gaussian uncertainties, use 1/sigma (not 1/sigma**2).
+    cov : bool, optional
+        Return the estimate and the covariance matrix of the estimate
+        If full is True, then cov is not returned.
 
     Returns
     -------
-    p : ndarray, shape (M,) or (M, K)
-        Polynomial coefficients, highest power first.
-        If `y` was 2-D, the coefficients for `k`-th data set are in ``p[:,k]``.
+    p : ndarray, shape (deg + 1,) or (deg + 1, K)
+        Polynomial coefficients, highest power first.  If `y` was 2-D, the
+        coefficients for `k`-th data set are in ``p[:,k]``.
 
-    residuals, rank, singular_values, rcond : present only if `full` = True
-        Residuals of the least-squares fit, the effective rank of the scaled
-        Vandermonde coefficient matrix, its singular values, and the specified
-        value of `rcond`. For more details, see `linalg.lstsq`.
+    residuals, rank, singular_values, rcond
+        Present only if `full` = True.  Residuals of the least-squares fit,
+        the effective rank of the scaled Vandermonde coefficient matrix,
+        its singular values, and the specified value of `rcond`. For more
+        details, see `linalg.lstsq`.
+
+    V : ndarray, shape (M,M) or (M,M,K)
+        Present only if `full` = False and `cov`=True.  The covariance
+        matrix of the polynomial coefficient estimates.  The diagonal of
+        this matrix are the variance estimates for each coefficient.  If y
+        is a 2-D array, then the covariance matrix for the `k`-th data set
+        are in ``V[:,:,k]``
+
 
     Warns
     -----
@@ -446,7 +462,7 @@ def polyfit(x, y, deg, rcond=None, full=False):
 
     See Also
     --------
-    polyval : Computes polynomial values.
+    polyval : Compute polynomial values.
     linalg.lstsq : Computes a least-squares fit.
     scipy.interpolate.UnivariateSpline : Computes spline fits.
 
@@ -459,10 +475,10 @@ def polyfit(x, y, deg, rcond=None, full=False):
 
     in the equations::
 
-        x[0]**n * p[n] + ... + x[0] * p[1] + p[0] = y[0]
-        x[1]**n * p[n] + ... + x[1] * p[1] + p[0] = y[1]
+        x[0]**n * p[0] + ... + x[0] * p[n-1] + p[n] = y[0]
+        x[1]**n * p[0] + ... + x[1] * p[n-1] + p[n] = y[1]
         ...
-        x[k]**n * p[n] + ... + x[k] * p[1] + p[0] = y[k]
+        x[k]**n * p[0] + ... + x[k] * p[n-1] + p[n] = y[k]
 
     The coefficient matrix of the coefficients `p` is a Vandermonde matrix.
 
@@ -520,8 +536,7 @@ def polyfit(x, y, deg, rcond=None, full=False):
 
     >>> import matplotlib.pyplot as plt
     >>> xp = np.linspace(-2, 6, 100)
-    >>> plt.plot(x, y, '.', xp, p(xp), '-', xp, p30(xp), '--')
-    [<matplotlib.lines.Line2D object at 0x...>, <matplotlib.lines.Line2D object at 0x...>, <matplotlib.lines.Line2D object at 0x...>]
+    >>> _ = plt.plot(x, y, '.', xp, p(xp), '-', xp, p30(xp), '--')
     >>> plt.ylim(-2,2)
     (-2, 2)
     >>> plt.show()
@@ -532,47 +547,68 @@ def polyfit(x, y, deg, rcond=None, full=False):
     y = NX.asarray(y) + 0.0
 
     # check arguments.
-    if deg < 0 :
-        raise ValueError, "expected deg >= 0"
+    if deg < 0:
+        raise ValueError("expected deg >= 0")
     if x.ndim != 1:
-        raise TypeError, "expected 1D vector for x"
+        raise TypeError("expected 1D vector for x")
     if x.size == 0:
-        raise TypeError, "expected non-empty vector for x"
-    if y.ndim < 1 or y.ndim > 2 :
-        raise TypeError, "expected 1D or 2D array for y"
-    if x.shape[0] != y.shape[0] :
-        raise TypeError, "expected x and y to have same length"
+        raise TypeError("expected non-empty vector for x")
+    if y.ndim < 1 or y.ndim > 2:
+        raise TypeError("expected 1D or 2D array for y")
+    if x.shape[0] != y.shape[0]:
+        raise TypeError("expected x and y to have same length")
 
     # set rcond
-    if rcond is None :
+    if rcond is None:
         rcond = len(x)*finfo(x.dtype).eps
 
-    # scale x to improve condition number
-    scale = abs(x).max()
-    if scale != 0 :
-        x /= scale
+    # set up least squares equation for powers of x
+    lhs = vander(x, order)
+    rhs = y
 
-    # solve least squares equation for powers of x
-    v = vander(x, order)
-    c, resids, rank, s = lstsq(v, y, rcond)
+    # apply weighting
+    if w is not None:
+        w = NX.asarray(w) + 0.0
+        if w.ndim != 1:
+            raise TypeError("expected a 1-d array for weights")
+        if w.shape[0] != y.shape[0]:
+            raise TypeError("expected w and y to have the same length")
+        lhs *= w[:, NX.newaxis]
+        if rhs.ndim == 2:
+            rhs *= w[:, NX.newaxis]
+        else:
+            rhs *= w
+
+    # scale lhs to improve condition number and solve
+    scale = NX.sqrt((lhs*lhs).sum(axis=0))
+    lhs /= scale
+    c, resids, rank, s = lstsq(lhs, rhs, rcond)
+    c = (c.T/scale).T  # broadcast scale coefficients
 
     # warn on rank reduction, which indicates an ill conditioned matrix
     if rank != order and not full:
         msg = "Polyfit may be poorly conditioned"
-        warnings.warn(msg, RankWarning)
+        warnings.warn(msg, RankWarning, stacklevel=2)
 
-    # scale returned coefficients
-    if scale != 0 :
-        if c.ndim == 1 :
-            c /= vander([scale], order)[0]
-        else :
-            c /= vander([scale], order).T
-
-    if full :
+    if full:
         return c, resids, rank, s, rcond
-    else :
+    elif cov:
+        Vbase = inv(dot(lhs.T, lhs))
+        Vbase /= NX.outer(scale, scale)
+        # Some literature ignores the extra -2.0 factor in the denominator, but
+        #  it is included here because the covariance of Multivariate Student-T
+        #  (which is implied by a Bayesian uncertainty analysis) includes it.
+        #  Plus, it gives a slightly more conservative estimate of uncertainty.
+        if len(x) <= order + 2:
+            raise ValueError("the number of data points must exceed order + 2 "
+                             "for Bayesian estimate the covariance matrix")
+        fac = resids / (len(x) - order - 2.0)
+        if y.ndim == 1:
+            return c, Vbase * fac
+        else:
+            return c, Vbase[:,:, NX.newaxis] * fac
+    else:
         return c
-
 
 
 def polyval(p, x):
@@ -594,7 +630,7 @@ def polyval(p, x):
        to zero) from highest degree to the constant term, or an
        instance of poly1d.
     x : array_like or poly1d object
-       A number, a 1D array of numbers, or an instance of poly1d, "at"
+       A number, an array of numbers, or an instance of poly1d, at
        which to evaluate `p`.
 
     Returns
@@ -641,7 +677,7 @@ def polyval(p, x):
         x = NX.asarray(x)
         y = NX.zeros_like(x)
     for i in range(len(p)):
-        y = x * y + p[i]
+        y = y * x + p[i]
     return y
 
 def polyadd(a1, a2):
@@ -678,12 +714,12 @@ def polyadd(a1, a2):
 
     >>> p1 = np.poly1d([1, 2])
     >>> p2 = np.poly1d([9, 5, 4])
-    >>> print p1
+    >>> print(p1)
     1 x + 2
-    >>> print p2
+    >>> print(p2)
        2
     9 x + 5 x + 4
-    >>> print np.polyadd(p1, p2)
+    >>> print(np.polyadd(p1, p2))
        2
     9 x + 6 x + 6
 
@@ -777,6 +813,8 @@ def polymul(a1, a2):
     poly1d : A one-dimensional polynomial class.
     poly, polyadd, polyder, polydiv, polyfit, polyint, polysub,
     polyval
+    convolve : Array convolution. Same output as polymul, but has parameter
+               for overlap mode.
 
     Examples
     --------
@@ -787,19 +825,19 @@ def polymul(a1, a2):
 
     >>> p1 = np.poly1d([1, 2, 3])
     >>> p2 = np.poly1d([9, 5, 1])
-    >>> print p1
+    >>> print(p1)
        2
     1 x + 2 x + 3
-    >>> print p2
+    >>> print(p2)
        2
     9 x + 5 x + 1
-    >>> print np.polymul(p1, p2)
+    >>> print(np.polymul(p1, p2))
        4      3      2
     9 x + 23 x + 38 x + 17 x + 3
 
     """
     truepoly = (isinstance(a1, poly1d) or isinstance(a2, poly1d))
-    a1,a2 = poly1d(a1),poly1d(a2)
+    a1, a2 = poly1d(a1), poly1d(a2)
     val = NX.convolve(a1, a2)
     if truepoly:
         val = poly1d(val)
@@ -876,7 +914,7 @@ def _raise_power(astr, wrap=70):
     line1 = ''
     line2 = ''
     output = ' '
-    while 1:
+    while True:
         mat = _poly_mat.search(astr, n)
         if mat is None:
             break
@@ -886,8 +924,8 @@ def _raise_power(astr, wrap=70):
         n = span[1]
         toadd2 = partstr + ' '*(len(power)-1)
         toadd1 = ' '*(len(partstr)-1) + power
-        if ((len(line2)+len(toadd2) > wrap) or \
-            (len(line1)+len(toadd1) > wrap)):
+        if ((len(line2) + len(toadd2) > wrap) or
+                (len(line1) + len(toadd1) > wrap)):
             output += line1 + "\n" + line2 + "\n "
             line1 = toadd1
             line2 = toadd2
@@ -927,7 +965,7 @@ class poly1d(object):
     Construct the polynomial :math:`x^2 + 2x + 3`:
 
     >>> p = np.poly1d([1, 2, 3])
-    >>> print np.poly1d(p)
+    >>> print(np.poly1d(p))
        2
     1 x + 2 x + 3
 
@@ -942,7 +980,7 @@ class poly1d(object):
     array([-1.+1.41421356j, -1.-1.41421356j])
     >>> p(p.r)
     array([ -4.44089210e-16+0.j,  -4.44089210e-16+0.j])
-    
+
     These numbers in the previous line represent (0, 0) to machine precision
 
     Show the coefficients:
@@ -983,7 +1021,7 @@ class poly1d(object):
     using the `variable` parameter:
 
     >>> p = np.poly1d([1,2,3], variable='z')
-    >>> print p
+    >>> print(p)
        2
     1 z + 2 z + 3
 
@@ -998,29 +1036,69 @@ class poly1d(object):
     poly1d([ 1, -3,  2])
 
     """
-    coeffs = None
-    order = None
-    variable = None
-    def __init__(self, c_or_r, r=0, variable=None):
+    __hash__ = None
+
+    @property
+    def coeffs(self):
+        """ A copy of the polynomial coefficients """
+        return self._coeffs.copy()
+
+    @property
+    def variable(self):
+        """ The name of the polynomial variable """
+        return self._variable
+
+    # calculated attributes
+    @property
+    def order(self):
+        """ The order or degree of the polynomial """
+        return len(self._coeffs) - 1
+
+    @property
+    def roots(self):
+        """ The roots of the polynomial, where self(x) == 0 """
+        return roots(self._coeffs)
+
+    # our internal _coeffs property need to be backed by __dict__['coeffs'] for
+    # scipy to work correctly.
+    @property
+    def _coeffs(self):
+        return self.__dict__['coeffs']
+    @_coeffs.setter
+    def _coeffs(self, coeffs):
+        self.__dict__['coeffs'] = coeffs
+
+    # alias attributes
+    r = roots
+    c = coef = coefficients = coeffs
+    o = order
+
+    def __init__(self, c_or_r, r=False, variable=None):
         if isinstance(c_or_r, poly1d):
-            for key in c_or_r.__dict__.keys():
-                self.__dict__[key] = c_or_r.__dict__[key]
+            self._variable = c_or_r._variable
+            self._coeffs = c_or_r._coeffs
+
+            if set(c_or_r.__dict__) - set(self.__dict__):
+                msg = ("In the future extra properties will not be copied "
+                       "across when constructing one poly1d from another")
+                warnings.warn(msg, FutureWarning, stacklevel=2)
+                self.__dict__.update(c_or_r.__dict__)
+
             if variable is not None:
-                self.__dict__['variable'] = variable
+                self._variable = variable
             return
         if r:
             c_or_r = poly(c_or_r)
         c_or_r = atleast_1d(c_or_r)
-        if len(c_or_r.shape) > 1:
-            raise ValueError, "Polynomial must be 1d only."
+        if c_or_r.ndim > 1:
+            raise ValueError("Polynomial must be 1d only.")
         c_or_r = trim_zeros(c_or_r, trim='f')
         if len(c_or_r) == 0:
             c_or_r = NX.array([0.])
-        self.__dict__['coeffs'] = c_or_r
-        self.__dict__['order'] = len(c_or_r) - 1
+        self._coeffs = c_or_r
         if variable is None:
             variable = 'x'
-        self.__dict__['variable'] = variable
+        self._variable = variable
 
     def __array__(self, t=None):
         if t:
@@ -1093,7 +1171,6 @@ class poly1d(object):
                 thestr = newstr
         return _raise_power(thestr)
 
-
     def __call__(self, val):
         return polyval(self.coeffs, val)
 
@@ -1127,7 +1204,7 @@ class poly1d(object):
 
     def __pow__(self, val):
         if not isscalar(val) or int(val) != val or val < 0:
-            raise ValueError, "Power to non-negative integers only."
+            raise ValueError("Power to non-negative integers only.")
         res = [1]
         for _ in range(val):
             res = polymul(self.coeffs, res)
@@ -1160,26 +1237,17 @@ class poly1d(object):
     __rtruediv__ = __rdiv__
 
     def __eq__(self, other):
-        return NX.alltrue(self.coeffs == other.coeffs)
+        if not isinstance(other, poly1d):
+            return NotImplemented
+        if self.coeffs.shape != other.coeffs.shape:
+            return False
+        return (self.coeffs == other.coeffs).all()
 
     def __ne__(self, other):
-        return NX.any(self.coeffs != other.coeffs)
+        if not isinstance(other, poly1d):
+            return NotImplemented
+        return not self.__eq__(other)
 
-    def __setattr__(self, key, val):
-        raise ValueError, "Attributes cannot be changed this way."
-
-    def __getattr__(self, key):
-        if key in ['r', 'roots']:
-            return roots(self.coeffs)
-        elif key in ['c','coef','coefficients']:
-            return self.coeffs
-        elif key in ['o']:
-            return self.order
-        else:
-            try:
-                return self.__dict__[key]
-            except KeyError:
-                raise AttributeError("'%s' has no attribute '%s'" % (self.__class__, key))
 
     def __getitem__(self, val):
         ind = self.order - val
@@ -1192,13 +1260,12 @@ class poly1d(object):
     def __setitem__(self, key, val):
         ind = self.order - key
         if key < 0:
-            raise ValueError, "Does not support negative powers."
+            raise ValueError("Does not support negative powers.")
         if key > self.order:
             zr = NX.zeros(key-self.order, self.coeffs.dtype)
-            self.__dict__['coeffs'] = NX.concatenate((zr, self.coeffs))
-            self.__dict__['order'] = key
+            self._coeffs = NX.concatenate((zr, self.coeffs))
             ind = 0
-        self.__dict__['coeffs'][ind] = val
+        self._coeffs[ind] = val
         return
 
     def __iter__(self):
@@ -1232,4 +1299,4 @@ class poly1d(object):
 
 # Stuff to do on module import
 
-warnings.simplefilter('always',RankWarning)
+warnings.simplefilter('always', RankWarning)

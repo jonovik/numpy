@@ -16,6 +16,7 @@ dictionary obtained from the todict() method of the class). More
 information is available in the NumPy Distutils Users Guide in
 ``<site-packages>/numpy/doc/DISTUTILS.txt``.
 
+
 .. index::
    single: distutils
 
@@ -31,7 +32,6 @@ misc_util
 .. autosummary::
    :toctree: generated/
 
-   Configuration
    get_numpy_include_dirs
    dict_append
    appendpath
@@ -59,9 +59,9 @@ misc_util
 .. class:: Configuration(package_name=None, parent_name=None, top_path=None, package_path=None, **attrs)
 
     Construct a configuration instance for the given package name. If
-    *parent_name* is not :const:`None`, then construct the package as a
+    *parent_name* is not None, then construct the package as a
     sub-package of the *parent_name* package. If *top_path* and
-    *package_path* are :const:`None` then they are assumed equal to
+    *package_path* are None then they are assumed equal to
     the path of the file this instance was created in. The setup.py
     files in the numpy distribution are good examples of how to use
     the :class:`Configuration` instance.
@@ -213,7 +213,7 @@ build phase of setup, if a template file named <somefile>.src is
 encountered, a new file named <somefile> is constructed from the
 template and placed in the build directory to be used instead. Two
 forms of template conversion are supported. The first form occurs for
-files named named <file>.ext.src where ext is a recognized Fortran
+files named <file>.ext.src where ext is a recognized Fortran
 extension (f, f90, f95, f77, for, ftn, pyf). The second form is used
 for all other cases.
 
@@ -305,7 +305,7 @@ for these files are:
    equivalent to #name=item1, item2, item1, item2, item1, item2, item1,
    item2#
 
-4. "\*/ "on a line by itself marks the end of the the variable expansion
+4. "\*/ "on a line by itself marks the end of the variable expansion
    naming. The next line is the first line that will be repeated using
    the named rules.
 

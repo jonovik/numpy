@@ -11,7 +11,7 @@
   by
 
   Travis Oliphant,  oliphant@ee.byu.edu
-  Brigham Young Univeristy
+  Brigham Young University
 
 
 maintainer email:  oliphant.travis@ieee.org
@@ -25,8 +25,8 @@ maintainer email:  oliphant.travis@ieee.org
 #include "structmember.h"
 
 /*#include <stdio.h>*/
+#define NPY_NO_DEPRECATED_API NPY_API_VERSION
 #define _MULTIARRAYMODULE
-#define NPY_NO_PREFIX
 #include "numpy/arrayobject.h"
 #include "numpy/arrayscalars.h"
 
@@ -34,7 +34,7 @@ maintainer email:  oliphant.travis@ieee.org
 
 #include "common.h"
 
-#include "numpy/npy_3kcompat.h"
+#include "npy_pycompat.h"
 
 #include "usertypes.h"
 
@@ -46,26 +46,26 @@ _append_new(int *types, int insert)
     int n = 0;
     int *newtypes;
 
-    while (types[n] != PyArray_NOTYPE) {
+    while (types[n] != NPY_NOTYPE) {
         n++;
     }
     newtypes = (int *)realloc(types, (n + 2)*sizeof(int));
     newtypes[n] = insert;
-    newtypes[n + 1] = PyArray_NOTYPE;
+    newtypes[n + 1] = NPY_NOTYPE;
     return newtypes;
 }
 
-static Bool
+static npy_bool
 _default_nonzero(void *ip, void *arr)
 {
     int elsize = PyArray_ITEMSIZE(arr);
     char *ptr = ip;
     while (elsize--) {
         if (*ptr++ != 0) {
-            return TRUE;
+            return NPY_TRUE;
         }
     }
-    return FALSE;
+    return NPY_FALSE;
 }
 
 static void
@@ -103,13 +103,14 @@ PyArray_InitArrFuncs(PyArray_ArrFuncs *f)
     f->copyswap = NULL;
     f->compare = NULL;
     f->argmax = NULL;
+    f->argmin = NULL;
     f->dotfunc = NULL;
     f->scanfunc = NULL;
     f->fromstr = NULL;
     f->nonzero = NULL;
     f->fill = NULL;
     f->fillwithscalar = NULL;
-    for(i = 0; i < PyArray_NSORTS; i++) {
+    for(i = 0; i < NPY_NSORTS; i++) {
         f->sort[i] = NULL;
         f->argsort[i] = NULL;
     }
@@ -120,7 +121,7 @@ PyArray_InitArrFuncs(PyArray_ArrFuncs *f)
 }
 
 /*
-  returns typenum to associate with this type >=PyArray_USERDEF.
+  returns typenum to associate with this type >=NPY_USERDEF.
   needs the userdecrs table and PyArray_NUMUSER variables
   defined in arraytypes.inc
 */
@@ -143,7 +144,7 @@ PyArray_RegisterDataType(PyArray_Descr *descr)
             return descr->type_num;
         }
     }
-    typenum = PyArray_USERDEF + NPY_NUMUSERTYPES;
+    typenum = NPY_USERDEF + NPY_NUMUSERTYPES;
     descr->type_num = typenum;
     if (descr->elsize == 0) {
         PyErr_SetString(PyExc_ValueError, "cannot register a" \
@@ -238,7 +239,7 @@ PyArray_RegisterCanCast(PyArray_Descr *descr, int totype,
         return -1;
     }
 
-    if (scalar == PyArray_NOSCALAR) {
+    if (scalar == NPY_NOSCALAR) {
         /*
          * register with cancastto
          * These lists won't be freed once created
@@ -246,7 +247,7 @@ PyArray_RegisterCanCast(PyArray_Descr *descr, int totype,
          */
         if (descr->f->cancastto == NULL) {
             descr->f->cancastto = (int *)malloc(1*sizeof(int));
-            descr->f->cancastto[0] = PyArray_NOTYPE;
+            descr->f->cancastto[0] = NPY_NOTYPE;
         }
         descr->f->cancastto = _append_new(descr->f->cancastto,
                                           totype);
@@ -256,8 +257,8 @@ PyArray_RegisterCanCast(PyArray_Descr *descr, int totype,
         if (descr->f->cancastscalarkindto == NULL) {
             int i;
             descr->f->cancastscalarkindto =
-                (int **)malloc(PyArray_NSCALARKINDS* sizeof(int*));
-            for (i = 0; i < PyArray_NSCALARKINDS; i++) {
+                (int **)malloc(NPY_NSCALARKINDS* sizeof(int*));
+            for (i = 0; i < NPY_NSCALARKINDS; i++) {
                 descr->f->cancastscalarkindto[i] = NULL;
             }
         }
@@ -265,7 +266,7 @@ PyArray_RegisterCanCast(PyArray_Descr *descr, int totype,
             descr->f->cancastscalarkindto[scalar] =
                 (int *)malloc(1*sizeof(int));
             descr->f->cancastscalarkindto[scalar][0] =
-                PyArray_NOTYPE;
+                NPY_NOTYPE;
         }
         descr->f->cancastscalarkindto[scalar] =
             _append_new(descr->f->cancastscalarkindto[scalar], totype);

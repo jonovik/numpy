@@ -3,7 +3,7 @@
  * strided data.
  *
  * Copyright (c) 2010 by Mark Wiebe (mwwiebe@gmail.com)
- * The Univerity of British Columbia
+ * The University of British Columbia
  *
  * See LICENSE.txt for the license.
  */
@@ -12,20 +12,34 @@
 #include "Python.h"
 #include "structmember.h"
 
+#define NPY_NO_DEPRECATED_API NPY_API_VERSION
 #define _MULTIARRAYMODULE
-#include <numpy/ndarrayobject.h>
-#include <numpy/ufuncobject.h>
+#include <numpy/arrayobject.h>
 #include <numpy/npy_cpu.h>
 #include <numpy/halffloat.h>
 
 #include "lowlevel_strided_loops.h"
 
+/* used for some alignment checks */
+#define _ALIGN(type) offsetof(struct {char c; type v;}, v)
 /*
- * x86 platform may work with unaligned access, except when the
- * compiler uses aligned SSE instructions, which gcc does in some
- * cases.  This is disabled for the time being.
+ * Disable harmless compiler warning "4116: unnamed type definition in
+ * parentheses" which is caused by the _ALIGN macro.
  */
-#if (defined(NPY_CPU_X86) || defined(NPY_CPU_AMD64))
+#if defined(_MSC_VER)
+#pragma warning(disable:4116)
+#endif
+
+
+/*
+ * x86 platform works with unaligned access but the compiler is allowed to
+ * assume all data is aligned to its size by the C standard. This means it can
+ * vectorize instructions peeling only by the size of the type, if the data is
+ * not aligned to this size one ends up with data not correctly aligned for SSE
+ * instructions (16 byte).
+ * So this flag can only be enabled if autovectorization is disabled.
+ */
+#if NPY_CPU_HAVE_UNALIGNED_ACCESS
 #  define NPY_USE_UNALIGNED_ACCESS 0
 #else
 #  define NPY_USE_UNALIGNED_ACCESS 0
@@ -36,27 +50,16 @@
 #define _NPY_NOP4(x) (x)
 #define _NPY_NOP8(x) (x)
 
-#define _NPY_SWAP2(x) (((((npy_uint16)x)&0xffu) << 8) | \
-                       (((npy_uint16)x) >> 8))
+#define _NPY_SWAP2(x) npy_bswap2(x)
 
-#define _NPY_SWAP4(x) (((((npy_uint32)x)&0xffu) << 24) | \
-                       ((((npy_uint32)x)&0xff00u) << 8) | \
-                       ((((npy_uint32)x)&0xff0000u) >> 8) | \
-                       (((npy_uint32)x) >> 24))
+#define _NPY_SWAP4(x) npy_bswap4(x)
 
 #define _NPY_SWAP_PAIR4(x) (((((npy_uint32)x)&0xffu) << 8) | \
                        ((((npy_uint32)x)&0xff00u) >> 8) | \
                        ((((npy_uint32)x)&0xff0000u) << 8) | \
                        ((((npy_uint32)x)&0xff000000u) >> 8))
 
-#define _NPY_SWAP8(x) (((((npy_uint64)x)&0xffULL) << 56) | \
-                       ((((npy_uint64)x)&0xff00ULL) << 40) | \
-                       ((((npy_uint64)x)&0xff0000ULL) << 24) | \
-                       ((((npy_uint64)x)&0xff000000ULL) << 8) | \
-                       ((((npy_uint64)x)&0xff00000000ULL) >> 8) | \
-                       ((((npy_uint64)x)&0xff0000000000ULL) >> 24) | \
-                       ((((npy_uint64)x)&0xff000000000000ULL) >> 40) | \
-                       (((npy_uint64)x) >> 56))
+#define _NPY_SWAP8(x) npy_bswap8(x)
 
 #define _NPY_SWAP_PAIR8(x) (((((npy_uint64)x)&0xffULL) << 24) | \
                        ((((npy_uint64)x)&0xff00ULL) << 8) | \
@@ -67,21 +70,11 @@
                        ((((npy_uint64)x)&0xff000000000000ULL) >> 8) | \
                        ((((npy_uint64)x)&0xff00000000000000ULL) >> 24))
 
-#define _NPY_SWAP_INPLACE2(x) { \
-        char a = (x)[0]; (x)[0] = (x)[1]; (x)[1] = a; \
-        }
+#define _NPY_SWAP_INPLACE2(x) npy_bswap2_unaligned(x)
 
-#define _NPY_SWAP_INPLACE4(x) { \
-        char a = (x)[0]; (x)[0] = (x)[3]; (x)[3] = a; \
-        a = (x)[1]; (x)[1] = (x)[2]; (x)[2] = a; \
-        }
+#define _NPY_SWAP_INPLACE4(x) npy_bswap4_unaligned(x)
 
-#define _NPY_SWAP_INPLACE8(x) { \
-        char a = (x)[0]; (x)[0] = (x)[7]; (x)[7] = a; \
-        a = (x)[1]; (x)[1] = (x)[6]; (x)[6] = a; \
-        a = (x)[2]; (x)[2] = (x)[5]; (x)[5] = a; \
-        a = (x)[3]; (x)[3] = (x)[4]; (x)[4] = a; \
-        }
+#define _NPY_SWAP_INPLACE8(x) npy_bswap8_unaligned(x)
 
 #define _NPY_SWAP_INPLACE16(x) { \
         char a = (x)[0]; (x)[0] = (x)[15]; (x)[15] = a; \
@@ -122,12 +115,25 @@
 
 
 #if @is_swap@ || @src_contig@ == 0 || @dst_contig@ == 0
+/*
+ * unrolling gains about 20-50% if the copy can be done in one mov instruction
+ * if not it can decrease performance
+ * tested to improve performance on intel xeon 5x/7x, core2duo, amd phenom x4
+ */
 static void
+#if @is_aligned@ && @is_swap@ == 0 && @elsize@ <= NPY_SIZEOF_INTP
+    NPY_GCC_UNROLL_LOOPS
+#endif
 @prefix@_@oper@_size@elsize@(char *dst, npy_intp dst_stride,
                         char *src, npy_intp src_stride,
                         npy_intp N, npy_intp NPY_UNUSED(src_itemsize),
-                        void *NPY_UNUSED(data))
+                        NpyAuxData *NPY_UNUSED(data))
 {
+#if @is_aligned@ && @elsize@ != 16
+    /* sanity check */
+    assert(npy_is_aligned(dst, _ALIGN(@type@)));
+    assert(npy_is_aligned(src, _ALIGN(@type@)));
+#endif
     /*printf("fn @prefix@_@oper@_size@elsize@\n");*/
     while (N > 0) {
 #if @is_aligned@
@@ -151,7 +157,7 @@ static void
 #else
 
         /* unaligned copy and swap */
-        memcpy(dst, src, @elsize@);
+        memmove(dst, src, @elsize@);
 #  if @is_swap@ == 1
         @swap@@elsize@(dst);
 #  elif @is_swap@ == 2
@@ -179,19 +185,39 @@ static void
 #endif
 
 
-/* specialized copy and swap for source stride 0 */
+/*
+ * specialized copy and swap for source stride 0,
+ * interestingly unrolling here is like above is only marginally profitable for
+ * small types and detrimental for >= 8byte moves on x86
+ * but it profits from vectorization enabled with -O3
+ */
 #if (@src_contig@ == 0) && @is_aligned@
-static void
+static NPY_GCC_OPT_3 void
 @prefix@_@oper@_size@elsize@_srcstride0(char *dst,
                         npy_intp dst_stride,
                         char *src, npy_intp NPY_UNUSED(src_stride),
                         npy_intp N, npy_intp NPY_UNUSED(src_itemsize),
-                        void *NPY_UNUSED(data))
+                        NpyAuxData *NPY_UNUSED(data))
 {
 #if @elsize@ != 16
-    @type@ temp = @swap@@elsize@(*((@type@ *)src));
+#  if !(@elsize@ == 1 && @dst_contig@)
+    @type@ temp;
+#  endif
 #else
     npy_uint64 temp0, temp1;
+#endif
+#if @is_aligned@ && @elsize@ != 16
+    /* sanity check */
+    assert(npy_is_aligned(dst, _ALIGN(@type@)));
+    assert(npy_is_aligned(src, _ALIGN(@type@)));
+#endif
+#if @elsize@ == 1 && @dst_contig@
+    memset(dst, *src, N);
+#else
+
+#  if @elsize@ != 16
+    temp = @swap@@elsize@(*((@type@ *)src));
+#  else
 #    if @is_swap@ == 0
         temp0 = (*((npy_uint64 *)src));
         temp1 = (*((npy_uint64 *)src + 1));
@@ -202,24 +228,25 @@ static void
         temp0 = _NPY_SWAP8(*((npy_uint64 *)src));
         temp1 = _NPY_SWAP8(*((npy_uint64 *)src + 1));
 #    endif
-#endif
+#  endif
 
     while (N > 0) {
-#if @elsize@ != 16
+#  if @elsize@ != 16
         *((@type@ *)dst) = temp;
-#else
+#  else
         *((npy_uint64 *)dst) = temp0;
         *((npy_uint64 *)dst + 1) = temp1;
-#endif
-#if @dst_contig@
+#  endif
+#  if @dst_contig@
         dst += @elsize@;
-#else
+#  else
         dst += dst_stride;
-#endif
+#  endif
         --N;
     }
+#endif/* @elsize == 1 && @dst_contig@ -- else */
 }
-#endif
+#endif/* (@src_contig@ == 0) && @is_aligned@ */
 
 #endif/* @elsize@ >= @minelsize@ */
 
@@ -231,10 +258,10 @@ static void
 _strided_to_strided(char *dst, npy_intp dst_stride,
                         char *src, npy_intp src_stride,
                         npy_intp N, npy_intp src_itemsize,
-                        void *NPY_UNUSED(data))
+                        NpyAuxData *NPY_UNUSED(data))
 {
     while (N > 0) {
-        memcpy(dst, src, src_itemsize);
+        memmove(dst, src, src_itemsize);
         dst += dst_stride;
         src += src_stride;
         --N;
@@ -245,12 +272,12 @@ static void
 _swap_strided_to_strided(char *dst, npy_intp dst_stride,
                         char *src, npy_intp src_stride,
                         npy_intp N, npy_intp src_itemsize,
-                        void *NPY_UNUSED(data))
+                        NpyAuxData *NPY_UNUSED(data))
 {
     char *a, *b, c;
 
     while (N > 0) {
-        memcpy(dst, src, src_itemsize);
+        memmove(dst, src, src_itemsize);
         /* general in-place swap */
         a = dst;
         b = dst + src_itemsize - 1;
@@ -270,13 +297,13 @@ static void
 _swap_pair_strided_to_strided(char *dst, npy_intp dst_stride,
                         char *src, npy_intp src_stride,
                         npy_intp N, npy_intp src_itemsize,
-                        void *NPY_UNUSED(data))
+                        NpyAuxData *NPY_UNUSED(data))
 {
     char *a, *b, c;
     npy_intp itemsize_half = src_itemsize / 2;
 
     while (N > 0) {
-        memcpy(dst, src, src_itemsize);
+        memmove(dst, src, src_itemsize);
         /* general in-place swap */
         a = dst;
         b = dst + itemsize_half - 1;
@@ -302,45 +329,17 @@ _swap_pair_strided_to_strided(char *dst, npy_intp dst_stride,
 }
 
 static void
-_strided_to_contig(char *dst, npy_intp NPY_UNUSED(dst_stride),
-                        char *src, npy_intp src_stride,
-                        npy_intp N, npy_intp src_itemsize,
-                        void *NPY_UNUSED(data))
-{
-    while (N > 0) {
-        memcpy(dst, src, src_itemsize);
-        dst += src_itemsize;
-        src += src_stride;
-        --N;
-    }
-}
-
-static void
-_contig_to_strided(char *dst, npy_intp dst_stride,
-                        char *src, npy_intp NPY_UNUSED(src_stride),
-                        npy_intp N, npy_intp src_itemsize,
-                        void *NPY_UNUSED(data))
-{
-    while (N > 0) {
-        memcpy(dst, src, src_itemsize);
-        dst += dst_stride;
-        src += src_itemsize;
-        --N;
-    }
-}
-
-static void
 _contig_to_contig(char *dst, npy_intp NPY_UNUSED(dst_stride),
                         char *src, npy_intp NPY_UNUSED(src_stride),
                         npy_intp N, npy_intp src_itemsize,
-                        void *NPY_UNUSED(data))
+                        NpyAuxData *NPY_UNUSED(data))
 {
-    memcpy(dst, src, src_itemsize*N);
+    memmove(dst, src, src_itemsize*N);
 }
 
 
-NPY_NO_EXPORT PyArray_StridedTransferFn *
-PyArray_GetStridedCopyFn(npy_intp aligned, npy_intp src_stride,
+NPY_NO_EXPORT PyArray_StridedUnaryOp *
+PyArray_GetStridedCopyFn(int aligned, npy_intp src_stride,
                          npy_intp dst_stride, npy_intp itemsize)
 {
 /*
@@ -381,7 +380,7 @@ PyArray_GetStridedCopyFn(npy_intp aligned, npy_intp src_stride,
                 }
             }
 
-            return &_strided_to_contig;
+            return &_strided_to_strided;
         }
         /* general dst */
         else {
@@ -408,7 +407,7 @@ PyArray_GetStridedCopyFn(npy_intp aligned, npy_intp src_stride,
 /**end repeat**/
                 }
 
-                return &_contig_to_strided;
+                return &_strided_to_strided;
             }
             else {
                 switch (itemsize) {
@@ -445,7 +444,7 @@ PyArray_GetStridedCopyFn(npy_intp aligned, npy_intp src_stride,
                 }
             }
 
-            return &_strided_to_contig;
+            return &_strided_to_strided;
         }
         /* general dst */
         else {
@@ -462,7 +461,7 @@ PyArray_GetStridedCopyFn(npy_intp aligned, npy_intp src_stride,
 /**end repeat**/
                 }
 
-                return &_contig_to_strided;
+                return &_strided_to_strided;
             }
             /* general src */
             else {
@@ -494,8 +493,8 @@ PyArray_GetStridedCopyFn(npy_intp aligned, npy_intp src_stride,
  * #not_pair = 1, 0#
  */
 
-NPY_NO_EXPORT PyArray_StridedTransferFn *
-@function@(npy_intp aligned, npy_intp src_stride,
+NPY_NO_EXPORT PyArray_StridedUnaryOp *
+@function@(int aligned, npy_intp src_stride,
                              npy_intp dst_stride, npy_intp itemsize)
 {
 /*
@@ -578,7 +577,7 @@ NPY_NO_EXPORT PyArray_StridedTransferFn *
 /**end repeat1**/
                 }
 
-                return &_contig_to_strided;
+                return  &_swap@tag@_strided_to_strided;
             }
             else {
                 switch (itemsize) {
@@ -626,7 +625,7 @@ NPY_NO_EXPORT PyArray_StridedTransferFn *
                 }
             }
 
-            return &_strided_to_contig;
+            return  &_swap@tag@_strided_to_strided;
         }
         /* general dst */
         else {
@@ -643,7 +642,7 @@ NPY_NO_EXPORT PyArray_StridedTransferFn *
 /**end repeat1**/
                 }
 
-                return &_contig_to_strided;
+                return  &_swap@tag@_strided_to_strided;
             }
             /* general src */
             else {
@@ -681,11 +680,16 @@ NPY_NO_EXPORT PyArray_StridedTransferFn *
  *          byte, short, int, long, longlong,
  *          half, float, double, longdouble,
  *          cfloat, cdouble, clongdouble#
- * #rname1 = bool,
- *          ubyte, ushort, uint, ulong, ulonglong,
- *          byte, short, int, long, longlong,
- *          half, float, double, longdouble,
- *          float, double, longdouble#
+ * #type1 = npy_bool,
+ *          npy_ubyte, npy_ushort, npy_uint, npy_ulong, npy_ulonglong,
+ *          npy_byte, npy_short, npy_int, npy_long, npy_longlong,
+ *          npy_half, npy_float, npy_double, npy_longdouble,
+ *          npy_cfloat, npy_cdouble, npy_clongdouble#
+ * #rtype1 = npy_bool,
+ *           npy_ubyte, npy_ushort, npy_uint, npy_ulong, npy_ulonglong,
+ *           npy_byte, npy_short, npy_int, npy_long, npy_longlong,
+ *           npy_half, npy_float, npy_double, npy_longdouble,
+ *           npy_float, npy_double, npy_longdouble#
  * #is_bool1 = 1, 0*17#
  * #is_half1 = 0*11, 1, 0*6#
  * #is_float1 = 0*12, 1, 0, 0, 1, 0, 0#
@@ -705,11 +709,16 @@ NPY_NO_EXPORT PyArray_StridedTransferFn *
  *          byte, short, int, long, longlong,
  *          half, float, double, longdouble,
  *          cfloat, cdouble, clongdouble#
- * #rname2 = bool,
- *          ubyte, ushort, uint, ulong, ulonglong,
- *          byte, short, int, long, longlong,
- *          half, float, double, longdouble,
- *          float, double, longdouble#
+ * #type2 = npy_bool,
+ *          npy_ubyte, npy_ushort, npy_uint, npy_ulong, npy_ulonglong,
+ *          npy_byte, npy_short, npy_int, npy_long, npy_longlong,
+ *          npy_half, npy_float, npy_double, npy_longdouble,
+ *          npy_cfloat, npy_cdouble, npy_clongdouble#
+ * #rtype2 = npy_bool,
+ *          npy_ubyte, npy_ushort, npy_uint, npy_ulong, npy_ulonglong,
+ *          npy_byte, npy_short, npy_int, npy_long, npy_longlong,
+ *          npy_half, npy_float, npy_double, npy_longdouble,
+ *          npy_float, npy_double, npy_longdouble#
  * #is_bool2 = 1, 0*17#
  * #is_half2 = 0*11, 1, 0*6#
  * #is_float2 = 0*12, 1, 0, 0, 1, 0, 0#
@@ -733,7 +742,7 @@ NPY_NO_EXPORT PyArray_StridedTransferFn *
 #  elif @is_double1@
 #    define _TYPE1 npy_uint64
 #  else
-#    define _TYPE1 npy_@rname1@
+#    define _TYPE1 @rtype1@
 #  endif
 
 #  if @is_float2@
@@ -741,13 +750,13 @@ NPY_NO_EXPORT PyArray_StridedTransferFn *
 #  elif @is_double2@
 #    define _TYPE2 npy_uint64
 #  else
-#    define _TYPE2 npy_@rname2@
+#    define _TYPE2 @rtype2@
 #  endif
 
 #else
 
-#define _TYPE1 npy_@rname1@
-#define _TYPE2 npy_@rname2@
+#define _TYPE1 @rtype1@
+#define _TYPE2 @rtype2@
 
 #endif
 
@@ -778,7 +787,7 @@ NPY_NO_EXPORT PyArray_StridedTransferFn *
 
 #else
 
-#  if @is_bool2@
+#  if @is_bool2@ || @is_bool1@
 #    define _CONVERT_FN(x) ((npy_bool)(x != 0))
 #  else
 #    define _CONVERT_FN(x) ((_TYPE2)x)
@@ -786,12 +795,12 @@ NPY_NO_EXPORT PyArray_StridedTransferFn *
 
 #endif
 
-static void
+static NPY_GCC_OPT_3 void
 @prefix@_cast_@name1@_to_@name2@(
                         char *dst, npy_intp dst_stride,
                         char *src, npy_intp src_stride,
                         npy_intp N, npy_intp NPY_UNUSED(src_itemsize),
-                        void *NPY_UNUSED(data))
+                        NpyAuxData *NPY_UNUSED(data))
 {
 #if @is_complex1@
     _TYPE1 src_value[2];
@@ -804,6 +813,16 @@ static void
     _TYPE2 dst_value;
 #endif
 
+#if @aligned@
+   /* sanity check */
+#  if !@is_complex1@
+    assert(npy_is_aligned(src, _ALIGN(_TYPE1)));
+#  endif
+#  if !@is_complex2@
+    assert(npy_is_aligned(dst, _ALIGN(_TYPE2)));
+#  endif
+#endif
+
     /*printf("@prefix@_cast_@name1@_to_@name2@\n");*/
 
     while (N--) {
@@ -811,11 +830,9 @@ static void
 #  if @is_complex1@
         src_value[0] = ((_TYPE1 *)src)[0];
         src_value[1] = ((_TYPE1 *)src)[1];
-#  elif !@aligned@
-        src_value = *((_TYPE1 *)src);
 #  endif
 #else
-        memcpy(&src_value, src, sizeof(src_value));
+        memmove(&src_value, src, sizeof(src_value));
 #endif
 
 /* Do the cast */
@@ -824,9 +841,17 @@ static void
     dst_value[0] = _CONVERT_FN(src_value[0]);
     dst_value[1] = _CONVERT_FN(src_value[1]);
 #  elif !@aligned@
-    dst_value = _CONVERT_FN(src_value[0]);
+#    if @is_bool2@
+       dst_value = _CONVERT_FN(src_value[0]) || _CONVERT_FN(src_value[1]);
+#    else
+       dst_value = _CONVERT_FN(src_value[0]);
+#    endif
 #  else
-    *(_TYPE2 *)dst = _CONVERT_FN(src_value[0]);
+#    if @is_bool2@
+       *(_TYPE2 *)dst = _CONVERT_FN(src_value[0]) || _CONVERT_FN(src_value[1]);
+#    else
+       *(_TYPE2 *)dst = _CONVERT_FN(src_value[0]);
+#    endif
 #  endif
 #else
 #  if @is_complex2@
@@ -847,16 +872,14 @@ static void
 #  if @is_complex2@
         ((_TYPE2 *)dst)[0] = dst_value[0];
         ((_TYPE2 *)dst)[1] = dst_value[1];
-#  elif !@aligned@
-        *((_TYPE2 *)dst) = dst_value;
 #  endif
 #else
-        memcpy(dst, &dst_value, sizeof(dst_value));
+        memmove(dst, &dst_value, sizeof(dst_value));
 #endif
 
 #if @contig@
-        dst += sizeof(npy_@name2@);
-        src += sizeof(npy_@name1@);
+        dst += sizeof(@type2@);
+        src += sizeof(@type1@);
 #else
         dst += dst_stride;
         src += src_stride;
@@ -876,8 +899,8 @@ static void
 
 /**end repeat**/
 
-NPY_NO_EXPORT PyArray_StridedTransferFn *
-PyArray_GetStridedNumericCastFn(npy_intp aligned, npy_intp src_stride,
+NPY_NO_EXPORT PyArray_StridedUnaryOp *
+PyArray_GetStridedNumericCastFn(int aligned, npy_intp src_stride,
                              npy_intp dst_stride,
                              int src_type_num, int dst_type_num)
 {
@@ -894,6 +917,11 @@ PyArray_GetStridedNumericCastFn(npy_intp aligned, npy_intp src_stride,
  *          byte, short, int, long, longlong,
  *          half, float, double, longdouble,
  *          cfloat, cdouble, clongdouble#
+ * #type1 = npy_bool,
+ *          npy_ubyte, npy_ushort, npy_uint, npy_ulong, npy_ulonglong,
+ *          npy_byte, npy_short, npy_int, npy_long, npy_longlong,
+ *          npy_half, npy_float, npy_double, npy_longdouble,
+ *          npy_cfloat, npy_cdouble, npy_clongdouble#
  */
 
         case NPY_@NAME1@:
@@ -911,21 +939,26 @@ PyArray_GetStridedNumericCastFn(npy_intp aligned, npy_intp src_stride,
  *          byte, short, int, long, longlong,
  *          half, float, double, longdouble,
  *          cfloat, cdouble, clongdouble#
+ * #type2 = npy_bool,
+ *          npy_ubyte, npy_ushort, npy_uint, npy_ulong, npy_ulonglong,
+ *          npy_byte, npy_short, npy_int, npy_long, npy_longlong,
+ *          npy_half, npy_float, npy_double, npy_longdouble,
+ *          npy_cfloat, npy_cdouble, npy_clongdouble#
  */
 
                 case NPY_@NAME2@:
                     /*printf("ret fn %d %d\n", NPY_@NAME1@, NPY_@NAME2@);*/
 #  if NPY_USE_UNALIGNED_ACCESS
-                    if (src_stride == sizeof(npy_@name1@) &&
-                                dst_stride == sizeof(npy_@name2@)) {
+                    if (src_stride == sizeof(@type1@) &&
+                                dst_stride == sizeof(@type2@)) {
                         return &_aligned_contig_cast_@name1@_to_@name2@;
                     }
                     else {
                         return &_aligned_cast_@name1@_to_@name2@;
                     }
 #  else
-                    if (src_stride == sizeof(npy_@name1@) &&
-                                dst_stride == sizeof(npy_@name2@)) {
+                    if (src_stride == sizeof(@type1@) &&
+                                dst_stride == sizeof(@type2@)) {
                         return aligned ?
                                     &_aligned_contig_cast_@name1@_to_@name2@ :
                                     &_contig_cast_@name1@_to_@name2@;
@@ -947,34 +980,9 @@ PyArray_GetStridedNumericCastFn(npy_intp aligned, npy_intp src_stride,
 }
 
 
-/************** STRIDED TRANSFER FUNCTION MEMORY MANAGEMENT **************/
-
-typedef void (*_npy_stridedtransfer_dealloc)(void *);
-NPY_NO_EXPORT void
-PyArray_FreeStridedTransferData(void *transferdata)
-{
-    if (transferdata != NULL) {
-        _npy_stridedtransfer_dealloc dealloc =
-                        *((_npy_stridedtransfer_dealloc *)transferdata);
-        dealloc(transferdata);
-    }
-}
-
-typedef void *(*_npy_stridedtransfer_copy)(void *);
-NPY_NO_EXPORT void *
-PyArray_CopyStridedTransferData(void *transferdata)
-{
-    if (transferdata != NULL) {
-        _npy_stridedtransfer_copy copy =
-                        *((_npy_stridedtransfer_copy *)transferdata + 1);
-        return copy(transferdata);
-    }
-
-    return NULL;
-}
-
 /****************** PRIMITIVE FLAT TO/FROM NDIM FUNCTIONS ******************/
 
+/* See documentation of arguments in lowlevel_strided_loops.h */
 NPY_NO_EXPORT npy_intp
 PyArray_TransferNDimToStrided(npy_intp ndim,
                 char *dst, npy_intp dst_stride,
@@ -982,8 +990,8 @@ PyArray_TransferNDimToStrided(npy_intp ndim,
                 npy_intp *coords, npy_intp coords_inc,
                 npy_intp *shape, npy_intp shape_inc,
                 npy_intp count, npy_intp src_itemsize,
-                PyArray_StridedTransferFn *stransfer,
-                void *data)
+                PyArray_StridedUnaryOp *stransfer,
+                NpyAuxData *data)
 {
     npy_intp i, M, N, coord0, shape0, src_stride0, coord1, shape1, src_stride1;
 
@@ -1093,6 +1101,7 @@ PyArray_TransferNDimToStrided(npy_intp ndim,
     }
 }
 
+/* See documentation of arguments in lowlevel_strided_loops.h */
 NPY_NO_EXPORT npy_intp
 PyArray_TransferStridedToNDim(npy_intp ndim,
                 char *dst, npy_intp *dst_strides, npy_intp dst_strides_inc,
@@ -1100,8 +1109,8 @@ PyArray_TransferStridedToNDim(npy_intp ndim,
                 npy_intp *coords, npy_intp coords_inc,
                 npy_intp *shape, npy_intp shape_inc,
                 npy_intp count, npy_intp src_itemsize,
-                PyArray_StridedTransferFn *stransfer,
-                void *data)
+                PyArray_StridedUnaryOp *stransfer,
+                NpyAuxData *data)
 {
     npy_intp i, M, N, coord0, shape0, dst_stride0, coord1, shape1, dst_stride1;
 
@@ -1210,3 +1219,574 @@ PyArray_TransferStridedToNDim(npy_intp ndim,
         }
     }
 }
+
+/* See documentation of arguments in lowlevel_strided_loops.h */
+NPY_NO_EXPORT npy_intp
+PyArray_TransferMaskedStridedToNDim(npy_intp ndim,
+                char *dst, npy_intp *dst_strides, npy_intp dst_strides_inc,
+                char *src, npy_intp src_stride,
+                npy_uint8 *mask, npy_intp mask_stride,
+                npy_intp *coords, npy_intp coords_inc,
+                npy_intp *shape, npy_intp shape_inc,
+                npy_intp count, npy_intp src_itemsize,
+                PyArray_MaskedStridedUnaryOp *stransfer,
+                NpyAuxData *data)
+{
+    npy_intp i, M, N, coord0, shape0, dst_stride0, coord1, shape1, dst_stride1;
+
+    /* Finish off dimension 0 */
+    coord0 = coords[0];
+    shape0 = shape[0];
+    dst_stride0 = dst_strides[0];
+    N = shape0 - coord0;
+    if (N >= count) {
+        stransfer(dst, dst_stride0,
+                    src, src_stride,
+                    mask, mask_stride,
+                    count, src_itemsize, data);
+        return 0;
+    }
+    stransfer(dst, dst_stride0,
+                src, src_stride,
+                mask, mask_stride,
+                N, src_itemsize, data);
+    count -= N;
+
+    /* If it's 1-dimensional, there's no more to copy */
+    if (ndim == 1) {
+        return count;
+    }
+
+    /* Adjust the src and dst pointers */
+    coord1 = (coords + coords_inc)[0];
+    shape1 = (shape + shape_inc)[0];
+    dst_stride1 = (dst_strides + dst_strides_inc)[0];
+    dst = dst - coord0*dst_stride0 + dst_stride1;
+    src += N*src_stride;
+    mask += N*mask_stride;
+
+    /* Finish off dimension 1 */
+    M = (shape1 - coord1 - 1);
+    N = shape0*M;
+    for (i = 0; i < M; ++i) {
+        if (shape0 >= count) {
+            stransfer(dst, dst_stride0,
+                        src, src_stride,
+                        mask, mask_stride,
+                        count, src_itemsize, data);
+            return 0;
+        }
+        else {
+            stransfer(dst, dst_stride0,
+                        src, src_stride,
+                        mask, mask_stride,
+                        shape0, src_itemsize, data);
+        }
+        count -= shape0;
+        dst += dst_stride1;
+        src += shape0*src_stride;
+        mask += shape0*mask_stride;
+    }
+
+    /* If it's 2-dimensional, there's no more to copy */
+    if (ndim == 2) {
+        return count;
+    }
+
+    /* General-case loop for everything else */
+    else {
+        /* Iteration structure for dimensions 2 and up */
+        struct {
+            npy_intp coord, shape, dst_stride;
+        } it[NPY_MAXDIMS];
+
+        /* Copy the coordinates and shape */
+        coords += 2*coords_inc;
+        shape += 2*shape_inc;
+        dst_strides += 2*dst_strides_inc;
+        for (i = 0; i < ndim-2; ++i) {
+            it[i].coord = coords[0];
+            it[i].shape = shape[0];
+            it[i].dst_stride = dst_strides[0];
+            coords += coords_inc;
+            shape += shape_inc;
+            dst_strides += dst_strides_inc;
+        }
+
+        for (;;) {
+            /* Adjust the dst pointer from the dimension 0 and 1 loop */
+            dst = dst - shape1*dst_stride1;
+
+            /* Increment to the next coordinate */
+            for (i = 0; i < ndim-2; ++i) {
+                dst += it[i].dst_stride;
+                if (++it[i].coord >= it[i].shape) {
+                    it[i].coord = 0;
+                    dst -= it[i].dst_stride*it[i].shape;
+                }
+                else {
+                    break;
+                }
+            }
+            /* If the last dimension rolled over, we're done */
+            if (i == ndim-2) {
+                return count;
+            }
+
+            /* A loop for dimensions 0 and 1 */
+            for (i = 0; i < shape1; ++i) {
+                if (shape0 >= count) {
+                    stransfer(dst, dst_stride0,
+                                src, src_stride,
+                                mask, mask_stride,
+                                count, src_itemsize, data);
+                    return 0;
+                }
+                else {
+                    stransfer(dst, dst_stride0,
+                                src, src_stride,
+                                mask, mask_stride,
+                                shape0, src_itemsize, data);
+                }
+                count -= shape0;
+                dst += dst_stride1;
+                src += shape0*src_stride;
+                mask += shape0*mask_stride;
+            }
+        }
+    }
+}
+
+
+/***************************************************************************/
+/****************** MapIter (Advanced indexing) Get/Set ********************/
+/***************************************************************************/
+
+/**begin repeat
+ * #name = set, get#
+ * #isget = 0, 1#
+ */
+
+/*
+ * Advanded indexing iteration of arrays when there is a single indexing
+ * array which has the same memory order as the value array and both
+ * can be trivally iterated (single stride, aligned, no casting necessary).
+ */
+NPY_NO_EXPORT int
+mapiter_trivial_@name@(PyArrayObject *self, PyArrayObject *ind,
+                       PyArrayObject *result)
+{
+    char *base_ptr, *ind_ptr, *result_ptr;
+    npy_intp self_stride, ind_stride, result_stride;
+    npy_intp fancy_dim = PyArray_DIM(self, 0);
+
+    npy_intp itersize;
+
+    int is_aligned = PyArray_ISALIGNED(self) && PyArray_ISALIGNED(result);
+    int needs_api = PyDataType_REFCHK(PyArray_DESCR(self));
+
+    PyArray_CopySwapFunc *copyswap = PyArray_DESCR(self)->f->copyswap;
+    NPY_BEGIN_THREADS_DEF;
+
+    base_ptr = PyArray_BYTES(self);
+    self_stride = PyArray_STRIDE(self, 0);
+
+    PyArray_PREPARE_TRIVIAL_PAIR_ITERATION(ind, result, itersize,
+                                           ind_ptr, result_ptr,
+                                           ind_stride, result_stride)
+
+    if (!needs_api) {
+        NPY_BEGIN_THREADS_THRESHOLDED(PyArray_SIZE(ind));
+    }
+#if !@isget@
+    /* Check the indices beforehand */
+    while (itersize--) {
+        npy_intp indval = *((npy_intp*)ind_ptr);
+        if (check_and_adjust_index(&indval, fancy_dim, 1, _save) < 0 ) {
+            return -1;
+        }
+        ind_ptr += ind_stride;
+    }
+
+    /*
+     * Reset the ind_ptr and itersize, due to broadcasting it is always
+     * the size of ind.
+     */
+    ind_ptr = PyArray_BYTES(ind);
+    itersize = PyArray_SIZE(ind);
+#endif
+
+    /* Optimization for aligned types that do not need the api */
+    switch ((is_aligned && !needs_api) ? PyArray_ITEMSIZE(self) : 0) {
+
+/**begin repeat1
+ * #elsize = 1, 2, 4, 8, 0#
+ * #copytype = npy_uint8, npy_uint16, npy_uint32, npy_uint64, 0#
+ */
+
+#if @elsize@
+    case @elsize@:
+#else
+    default:
+#endif
+        while (itersize--) {
+            char * self_ptr;
+            npy_intp indval = *((npy_intp*)ind_ptr);
+            assert(npy_is_aligned(ind_ptr, _ALIGN(npy_intp)));
+#if @isget@
+            if (check_and_adjust_index(&indval, fancy_dim, 1, _save) < 0 ) {
+                return -1;
+            }
+#else
+            if (indval < 0) {
+                indval += fancy_dim;
+            }
+#endif
+            self_ptr = base_ptr + indval * self_stride;
+
+#if @isget@
+#if @elsize@
+            assert(npy_is_aligned(result_ptr, _ALIGN(@copytype@)));
+            assert(npy_is_aligned(self_ptr, _ALIGN(@copytype@)));
+            *(@copytype@ *)result_ptr = *(@copytype@ *)self_ptr;
+#else
+            copyswap(result_ptr, self_ptr, 0, self);
+#endif
+
+#else /* !@isget@ */
+#if @elsize@
+            assert(npy_is_aligned(result_ptr, _ALIGN(@copytype@)));
+            assert(npy_is_aligned(self_ptr, _ALIGN(@copytype@)));
+            *(@copytype@ *)self_ptr = *(@copytype@ *)result_ptr;
+#else
+            copyswap(self_ptr, result_ptr, 0, self);
+#endif
+#endif
+
+            ind_ptr += ind_stride;
+            result_ptr += result_stride;
+        }
+        break;
+
+/**end repeat1**/
+    }
+
+    NPY_END_THREADS;
+
+    return 0;
+}
+
+
+/*
+ * General advanced indexing iteration.
+ */
+NPY_NO_EXPORT int
+mapiter_@name@(PyArrayMapIterObject *mit)
+{
+    npy_intp *counter, count;
+    int i, is_aligned;
+
+    /* Cached mit info */
+    int numiter = mit->numiter;
+    int needs_api = mit->needs_api;
+    /* Constant information */
+    npy_intp fancy_dims[NPY_MAXDIMS];
+    npy_intp fancy_strides[NPY_MAXDIMS];
+#if @isget@
+    int iteraxis;
+#endif
+
+    char *baseoffset = mit->baseoffset;
+    char **outer_ptrs = mit->outer_ptrs;
+    npy_intp *outer_strides = mit->outer_strides;
+    PyArrayObject *array= mit->array;
+
+    /* Fill constant information */
+#if @isget@
+    iteraxis = mit->iteraxes[0];
+#endif
+    for (i = 0; i < numiter; i++) {
+        fancy_dims[i] = mit->fancy_dims[i];
+        fancy_strides[i] = mit->fancy_strides[i];
+    }
+
+    /*
+     * Alignment information (swapping is never needed, since we buffer),
+     * could also check extra_op is buffered, but it should rarely matter.
+     */
+
+    is_aligned = PyArray_ISALIGNED(array) && PyArray_ISALIGNED(mit->extra_op);
+
+    if (mit->size == 0) {
+       return 0;
+    }
+
+    if (mit->subspace_iter == NULL) {
+        /*
+         * Item by item copy situation, the operand is buffered
+         * so use copyswap.
+         */
+         PyArray_CopySwapFunc *copyswap = PyArray_DESCR(array)->f->copyswap;
+
+        /* We have only one iterator handling everything */
+        counter = NpyIter_GetInnerLoopSizePtr(mit->outer);
+
+        /************ Optimized inner loops without subspace *************/
+
+/**begin repeat1
+ * #one_iter = 1, 0#
+ * #numiter = 1, numiter#
+ */
+
+#if @one_iter@
+        if (numiter == 1) {
+#else
+        else {
+#endif
+            NPY_BEGIN_THREADS_DEF;
+            if (!needs_api) {
+                NPY_BEGIN_THREADS;
+            }
+
+            /* Optimization for aligned types that do not need the api */
+            switch ((is_aligned && !needs_api) ? PyArray_ITEMSIZE(array) : 0) {
+
+/**begin repeat2
+ * #elsize = 1, 2, 4, 8, 0#
+ * #copytype = npy_uint8, npy_uint16, npy_uint32, npy_uint64, 0#
+ */
+
+#if @elsize@
+            case @elsize@:
+#else
+            default:
+#endif
+                /* Outer iteration (safe because mit->size != 0) */
+                do {
+#if !@isget@
+                    /*
+                     * When the API is needed the casting might fail
+                     * TODO: (only if buffering is enabled).
+                     */
+                    if (needs_api && PyErr_Occurred()) {
+                        return -1;
+                    }
+#endif
+                    count = *counter;
+                    while (count--) {
+                        char * self_ptr = baseoffset;
+                        for (i=0; i < @numiter@; i++) {
+                            npy_intp indval = *((npy_intp*)outer_ptrs[i]);
+                            assert(npy_is_aligned(outer_ptrs[i],
+                                                  _ALIGN(npy_intp)));
+
+#if @isget@ && @one_iter@
+                            if (check_and_adjust_index(&indval, fancy_dims[i],
+                                                       iteraxis, _save) < 0 ) {
+                                return -1;
+                            }
+#else
+                            if (indval < 0) {
+                                indval += fancy_dims[i];
+                            }
+#endif
+                            self_ptr += indval * fancy_strides[i];
+
+                            /* advance indexing arrays */
+                            outer_ptrs[i] += outer_strides[i];
+                        }
+
+#if @isget@
+#if @elsize@
+                        assert(npy_is_aligned(outer_ptrs[i], _ALIGN(@copytype@)));
+                        assert(npy_is_aligned(self_ptr, _ALIGN(@copytype@)));
+                        *(@copytype@ *)(outer_ptrs[i]) = *(@copytype@ *)self_ptr;
+#else
+                        copyswap(outer_ptrs[i], self_ptr, 0, array);
+#endif
+#else /* !@isget@ */
+#if @elsize@
+                        assert(npy_is_aligned(outer_ptrs[i], _ALIGN(@copytype@)));
+                        assert(npy_is_aligned(self_ptr, _ALIGN(@copytype@)));
+                        *(@copytype@ *)self_ptr = *(@copytype@ *)(outer_ptrs[i]);
+#else
+                        copyswap(self_ptr, outer_ptrs[i], 0, array);
+#endif
+#endif
+                        /* advance extra operand */
+                        outer_ptrs[i] += outer_strides[i];
+                    }
+                } while (mit->outer_next(mit->outer));
+
+                break;
+
+/**end repeat2**/
+            }
+            NPY_END_THREADS;
+        }
+/**end repeat1**/
+    }
+
+    /******************* Nested Iteration Situation *******************/
+    else {
+        char *subspace_baseptrs[2];
+        char **subspace_ptrs = mit->subspace_ptrs;
+        npy_intp *subspace_strides = mit->subspace_strides;
+        int is_subiter_trivial = 0; /* has three states */
+        npy_intp reset_offsets[2] = {0, 0};
+
+        /* Use strided transfer functions for the inner loop */
+        PyArray_StridedUnaryOp *stransfer = NULL;
+        NpyAuxData *transferdata = NULL;
+        npy_intp fixed_strides[2];
+
+#if @isget@
+        npy_intp src_itemsize = PyArray_ITEMSIZE(array);
+#else
+        npy_intp src_itemsize = PyArray_ITEMSIZE(mit->extra_op);
+#endif
+
+        /*
+         * Get a dtype transfer function, since there are no
+         * buffers, this is safe.
+         */
+        NpyIter_GetInnerFixedStrideArray(mit->subspace_iter, fixed_strides);
+
+        if (PyArray_GetDTypeTransferFunction(is_aligned,
+#if @isget@
+                        fixed_strides[0], fixed_strides[1],
+                        PyArray_DESCR(array), PyArray_DESCR(mit->extra_op),
+#else
+                        fixed_strides[1], fixed_strides[0],
+                         PyArray_DESCR(mit->extra_op), PyArray_DESCR(array),
+#endif
+                        0,
+                        &stransfer, &transferdata,
+                        &needs_api) != NPY_SUCCEED) {
+            return -1;
+        }
+
+        counter = NpyIter_GetInnerLoopSizePtr(mit->subspace_iter);
+        if (*counter == PyArray_SIZE(mit->subspace)) {
+           /*
+            * subspace is trivially iterable.
+            * manipulate pointers to avoid expensive resetting
+            */
+            is_subiter_trivial = 1;
+        }
+/**begin repeat1
+ * #one_iter = 1, 0#
+ * #numiter = 1, numiter#
+ */
+
+#if @one_iter@
+        if (numiter == 1) {
+#else
+        else {
+#endif
+            NPY_BEGIN_THREADS_DEF;
+            if (!needs_api) {
+                NPY_BEGIN_THREADS;
+            }
+
+            /* Outer iteration (safe because mit->size != 0) */
+            do {
+                char * self_ptr = baseoffset;
+                for (i=0; i < @numiter@; i++) {
+                    npy_intp indval = *((npy_intp*)outer_ptrs[i]);
+
+#if @isget@ && @one_iter@
+                    if (check_and_adjust_index(&indval, fancy_dims[i],
+                                               iteraxis, _save) < 0 ) {
+                        NPY_AUXDATA_FREE(transferdata);
+                        return -1;
+                    }
+#else
+                    if (indval < 0) {
+                        indval += fancy_dims[i];
+                    }
+#endif
+
+                    self_ptr += indval * fancy_strides[i];
+                }
+
+                /*
+                 * Resetting is slow, so try to avoid resetting
+                 * if subspace iteration is trivial.
+                 * Watch out: reset_offsets are kept outside of the loop,
+                 * assuming the subspaces of different external iterations
+                 * share the same structure.
+                 */
+                if (is_subiter_trivial <= 1) {
+                    /* slower resetting: first iteration or non-trivial subspace */
+
+                    char * errmsg = NULL;
+                    subspace_baseptrs[0] = self_ptr;
+                    subspace_baseptrs[1] = mit->extra_op_ptrs[0];
+
+                    /* (can't really fail, since no buffering necessary) */
+                    if (!NpyIter_ResetBasePointers(mit->subspace_iter,
+                                                   subspace_baseptrs,
+                                                   &errmsg)) {
+                        NPY_END_THREADS;
+                        PyErr_SetString(PyExc_ValueError, errmsg);
+                        NPY_AUXDATA_FREE(transferdata);
+                        return -1;
+                    }
+                    if (is_subiter_trivial != 0) {
+                        /* reset_offsets are nonzero for negative strides.*/
+                        reset_offsets[0] = subspace_ptrs[0] - self_ptr;
+                        reset_offsets[1] = subspace_ptrs[1] - mit->extra_op_ptrs[0];
+
+                        /* use the faster adjustment further on */
+                        is_subiter_trivial ++;
+                    }
+                }
+                else {
+                    /*
+                     * faster resetting if the subspace iteration is trival.
+                     * reset_offsets are zero for positive strides,
+                     * for negative strides this shifts the pointer to the last
+                     * item.
+                     */
+                    subspace_ptrs[0] = self_ptr + reset_offsets[0];
+                    subspace_ptrs[1] = mit->extra_op_ptrs[0] + reset_offsets[1];
+                }
+
+#if !@isget@
+                /*
+                 * When the API is needed the casting might fail
+                 * TODO: Could only check if casting is unsafe, or even just
+                 *       not at all...
+                 */
+                if (needs_api && PyErr_Occurred()) {
+                    NPY_AUXDATA_FREE(transferdata);
+                    return -1;
+                }
+#endif
+
+                do {
+
+#if @isget@
+                    stransfer(subspace_ptrs[1], subspace_strides[1],
+                              subspace_ptrs[0], subspace_strides[0],
+                              *counter, src_itemsize, transferdata);
+#else
+                    stransfer(subspace_ptrs[0], subspace_strides[0],
+                              subspace_ptrs[1], subspace_strides[1],
+                              *counter, src_itemsize, transferdata);
+#endif
+                } while (mit->subspace_next(mit->subspace_iter));
+
+                mit->extra_op_next(mit->extra_op_iter);
+            } while (mit->outer_next(mit->outer));
+            NPY_END_THREADS;
+        }
+/**end repeat1**/
+
+        NPY_AUXDATA_FREE(transferdata);
+    }
+    return 0;
+}
+
+/**end repeat**/

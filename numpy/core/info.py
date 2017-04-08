@@ -1,10 +1,10 @@
-__doc__ = """Defines a multi-dimensional array and useful procedures for Numerical computation.
+"""Defines a multi-dimensional array and useful procedures for Numerical computation.
 
 Functions
 
 -   array                      - NumPy Array construction
 -   zeros                      - Return an array of all zeros
--   empty                      - Return an unitialized array
+-   empty                      - Return an uninitialized array
 -   shape                      - Return shape of sequence or array
 -   rank                       - Return number of dimensions
 -   size                       - Return number of elements in entire array or a
@@ -81,6 +81,7 @@ More Functions:
        arccosh                arcsinh                arctanh
 
 """
+from __future__ import division, absolute_import, print_function
 
 depends = ['testing']
 global_symbols = ['*']

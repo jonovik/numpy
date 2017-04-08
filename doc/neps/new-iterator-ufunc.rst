@@ -1,4 +1,7 @@
-:Title: Optimizing Iterator/UFunc Performance
+=====================================
+Optimizing Iterator/UFunc Performance
+=====================================
+
 :Author: Mark Wiebe <mwwiebe@gmail.com>
 :Content-Type: text/x-rst
 :Created: 25-Nov-2010
@@ -29,7 +32,7 @@ Key benefits include:
 
 A large fraction of this iterator design has already been implemented with
 promising results.  Construction overhead is slightly greater (a.flat:
-0.5 us, newiter(a): 1.4 us and broadcast(a,b): 1.4 us, newiter([a,b]):
+0.5 us, nditer(a): 1.4 us and broadcast(a,b): 1.4 us, nditer([a,b]):
 2.2 us), but, as shown in an example, it is already possible to improve
 on the performance of the built-in NumPy mechanisms in pure Python code
 together with the iterator.  One example rewrites np.add, getting a
@@ -48,7 +51,7 @@ NumPy defaults to returning C-contiguous arrays from UFuncs.  This can
 result in extremely poor memory access patterns when dealing with data
 that is structured differently.  A simple timing example illustrates
 this with a more than eight times performance hit from adding
-Fortran-contiguous arrays together.  All timings are done using Numpy
+Fortran-contiguous arrays together.  All timings are done using NumPy
 2.0dev (Nov 22, 2010) on an Athlon 64 X2 4200+, with a 64-bit OS.::
 
     In [1]: import numpy as np
@@ -375,7 +378,7 @@ In general, it should be possible to emulate the current behavior where it
 is desired, but I believe the default should be to produce and manipulate
 memory layouts which will give the best performance.
 
-To support the new cache-friendly behavior, we introduce a new 
+To support the new cache-friendly behavior, we introduce a new
 option ‘K’ (for “keep”) for any ``order=`` parameter.
 
 The proposed ‘order=’ flags become as follows:
@@ -410,7 +413,7 @@ parameter to control the layout of their output(s).
 
 The iterator can do automatic casting, and I have created a sequence
 of progressively more permissive casting rules.  Perhaps for 2.0, NumPy
-could adopt this enum as its prefered way of dealing with casting.::
+could adopt this enum as its preferred way of dealing with casting.::
 
     /* For specifying allowed casting in operations which support it */
     typedef enum {
@@ -596,7 +599,7 @@ branch, where libndarray has the array named ``NpyArray`` and functions
 named ``NpyArray_*``.  The iterator is named ``NpyIter`` and functions are
 named ``NpyIter_*``.
 
-The Python exposure has the iterator named ``np.newiter``.  One possible
+The Python exposure has the iterator named ``np.nditer``.  One possible
 release strategy for this iterator would be to release a 1.X (1.6?) version
 with the iterator added, but not used by the NumPy code.  Then, 2.0 can
 be release with it fully integrated.  If this strategy is chosen, the
@@ -691,7 +694,7 @@ Construction and Destruction
     If copying is allowed, it will make a temporary copy if the data
     is castable.  If ``UPDATEIFCOPY`` is enabled, it will also copy
     the data back with another cast upon iterator destruction.
-    
+
     If ``a_ndim`` is greater than zero, ``axes`` must also be provided.
     In this case, ``axes`` is an ``a_ndim``-sized array of ``op``'s axes.
     A value of -1 in ``axes`` means ``newaxis``. Within the ``axes``
@@ -748,7 +751,7 @@ Construction and Destruction
     for each ``op[i]``.
 
     The parameter ``oa_ndim``, when non-zero, specifies the number of
-    dimensions that will be iterated with customized broadcasting.  
+    dimensions that will be iterated with customized broadcasting.
     If it is provided, ``op_axes`` must also be provided.
     These two parameters let you control in detail how the
     axes of the operand arrays get matched together and iterated.
@@ -778,7 +781,7 @@ Construction and Destruction
     iterator, are:
 
         ``NPY_ITER_C_INDEX``, ``NPY_ITER_F_INDEX``
-        
+
             Causes the iterator to track an index matching C or
             Fortran order. These options are mutually exclusive.
 
@@ -813,7 +816,7 @@ Construction and Destruction
             data type, calculated based on the ufunc type promotion rules.
             The flags for each operand must be set so that the appropriate
             casting is permitted, and copying or buffering must be enabled.
-            
+
             If the common data type is known ahead of time, don't use this
             flag.  Instead, set the requested dtype for all the operands.
 
@@ -936,11 +939,11 @@ Construction and Destruction
             is flagged for writing and is copied, causes the data
             in a copy to be copied back to ``op[i]`` when the iterator
             is destroyed.
-            
+
             If the operand is flagged as write-only and a copy is needed,
             an uninitialized temporary array will be created and then copied
             to back to ``op[i]`` on destruction, instead of doing
-            the unecessary copy operation.
+            the unnecessary copy operation.
 
         ``NPY_ITER_NBO``, ``NPY_ITER_ALIGNED``, ``NPY_ITER_CONTIG``
 
@@ -988,7 +991,7 @@ Construction and Destruction
             For use with ``NPY_ITER_ALLOCATE``, this flag disables
             allocating an array subtype for the output, forcing
             it to be a straight ndarray.
-            
+
             TODO: Maybe it would be better to introduce a function
             ``NpyIter_GetWrappedOutput`` and remove this flag?
 
@@ -1009,7 +1012,7 @@ Construction and Destruction
 
     Makes a copy of the given iterator.  This function is provided
     primarily to enable multi-threaded iteration of the data.
-    
+
     *TODO*: Move this to a section about multithreaded iteration.
 
     The recommended approach to multithreaded iteration is to
@@ -1052,7 +1055,7 @@ Construction and Destruction
     for any operand that later has ``NpyIter_UpdateIter`` called on it.
 
     The flags that may be passed in ``op_flags`` are
-    ``NPY_ITER_COPY``, ``NPY_ITER_UPDATEIFCOPY``, 
+    ``NPY_ITER_COPY``, ``NPY_ITER_UPDATEIFCOPY``,
     ``NPY_ITER_NBO``, ``NPY_ITER_ALIGNED``, ``NPY_ITER_CONTIG``.
 
 ``int NpyIter_RemoveAxis(NpyIter *iter, npy_intp axis)``
@@ -1242,7 +1245,7 @@ Construction and Destruction
 
     When using ranged iteration to multithread a reduction, there are
     two possible ways to do the reduction:
-    
+
     If there is a big reduction to a small output, make a temporary
     array initialized to the reduction unit for each thread, then have
     each thread reduce into its temporary.  When that is complete,
@@ -1341,14 +1344,14 @@ Construction and Destruction
     handle their processing manually.  By calling this function
     before removing the axes, you can get the strides for the
     manual processing.
-    
+
     Returns ``NULL`` on error.
 
 ``int NpyIter_GetShape(NpyIter *iter, npy_intp *outshape)``
 
     Returns the broadcast shape of the iterator in ``outshape``.
     This can only be called on an iterator which supports coordinates.
-    
+
     Returns ``NPY_SUCCEED`` or ``NPY_FAIL``.
 
 ``PyArray_Descr **NpyIter_GetDescrArray(NpyIter *iter)``
@@ -1658,7 +1661,7 @@ First, here is the definition of the ``luf`` function.::
 
     def luf(lamdaexpr, *args, **kwargs):
         """Lambda UFunc
-        
+
             e.g.
             c = luf(lambda i,j:i+j, a, b, order='K',
                                 casting='safe', buffersize=8192)
@@ -1670,7 +1673,7 @@ First, here is the definition of the ``luf`` function.::
 
         nargs = len(args)
         op = args + (kwargs.get('out',None),)
-        it = np.newiter(op, ['buffered','no_inner_iteration'],
+        it = np.nditer(op, ['buffered','no_inner_iteration'],
                 [['readonly','nbo_aligned']]*nargs +
                                 [['writeonly','allocate','no_broadcast']],
                 order=kwargs.get('order','K'),
@@ -1719,9 +1722,9 @@ Python iterator protocol.::
     def iter_add_py(x, y, out=None):
         addop = np.add
 
-        it = np.newiter([x,y,out], [],
+        it = np.nditer([x,y,out], [],
                     [['readonly'],['readonly'],['writeonly','allocate']])
-        
+
         for (a, b, c) in it:
             addop(a, b, c)
 
@@ -1732,9 +1735,9 @@ Here is the same function, but following the C-style pattern.::
     def iter_add(x, y, out=None):
         addop = np.add
 
-        it = np.newiter([x,y,out], [],
+        it = np.nditer([x,y,out], [],
                     [['readonly'],['readonly'],['writeonly','allocate']])
-        
+
         while not it.finished:
             addop(it[0], it[1], it[2])
             it.iternext()
@@ -1770,9 +1773,9 @@ of the iterator, designed to help speed up the inner loops, is the flag
     def iter_add_noinner(x, y, out=None):
         addop = np.add
 
-        it = np.newiter([x,y,out], ['no_inner_iteration'],
+        it = np.nditer([x,y,out], ['no_inner_iteration'],
                     [['readonly'],['readonly'],['writeonly','allocate']])
-        
+
         for (a, b, c) in it:
             addop(a, b, c)
 
@@ -1807,9 +1810,9 @@ using other NumPy machinery to efficiently execute it.  Let's
 modify ``iter_add`` once again.::
 
     def iter_add_itview(x, y, out=None):
-        it = np.newiter([x,y,out], [],
+        it = np.nditer([x,y,out], [],
                     [['readonly'],['readonly'],['writeonly','allocate']])
-        
+
         (a, b, c) = it.itviews
         np.add(a, b, c)
 
@@ -1890,7 +1893,7 @@ Here's the same function, rewritten to use a new iterator.  Note how
 easy it was to add an optional output parameter.::
 
     In [5]: def composite_over_it(im1, im2, out=None, buffersize=4096):
-      ....:     it = np.newiter([im1, im1[:,:,-1], im2, out],
+      ....:     it = np.nditer([im1, im1[:,:,-1], im2, out],
       ....:                     ['buffered','no_inner_iteration'],
       ....:                     [['readonly']]*3+[['writeonly','allocate']],
       ....:                     op_axes=[None,[0,1,np.newaxis],None,None],
@@ -1900,7 +1903,7 @@ easy it was to add an optional output parameter.::
       ....:         it[3] += it[0]
       ....:         it.iternext()
       ....:     return it.operands[3]
-    
+
     In [6]: timeit composite_over_it(image1, image2)
     1 loops, best of 3: 197 ms per loop
 
@@ -1965,7 +1968,7 @@ implement the composite operation with numexpr.::
 
 This beats the straight NumPy operation, but isn't very good.  Switching
 to the iterator version of numexpr, we get a big improvement over the
-straight Python function using the iterator.  Note that in this is on
+straight Python function using the iterator.  Note that this is on
 a dual core machine.::
 
     In [29]: def composite_over_ne_it(im1, im2, out=None):
@@ -1978,4 +1981,3 @@ a dual core machine.::
     In [31]: ne.set_num_threads(1)
     In [32]: timeit composite_over_ne_it(image1,image2)
     10 loops, best of 3: 91.1 ms per loop
-

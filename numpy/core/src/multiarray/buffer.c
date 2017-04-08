@@ -2,17 +2,18 @@
 #include <Python.h>
 #include "structmember.h"
 
+#define NPY_NO_DEPRECATED_API NPY_API_VERSION
 #define _MULTIARRAYMODULE
-#define NPY_NO_PREFIX
 #include "numpy/arrayobject.h"
 #include "numpy/arrayscalars.h"
 
 #include "npy_config.h"
 
-#include "numpy/npy_3kcompat.h"
+#include "npy_pycompat.h"
 
 #include "buffer.h"
 #include "numpyos.h"
+#include "arrayobject.h"
 
 /*************************************************************************
  ****************   Implement Buffer Protocol ****************************
@@ -20,6 +21,7 @@
 
 /* removed multiple segment interface */
 
+#if !defined(NPY_PY3K)
 static Py_ssize_t
 array_getsegcount(PyArrayObject *self, Py_ssize_t *lenp)
 {
@@ -44,7 +46,7 @@ array_getreadbuf(PyArrayObject *self, Py_ssize_t segment, void **ptrptr)
         return -1;
     }
     if (PyArray_ISONESEGMENT(self)) {
-        *ptrptr = self->data;
+        *ptrptr = PyArray_DATA(self);
         return PyArray_NBYTES(self);
     }
     PyErr_SetString(PyExc_ValueError, "array is not a single segment");
@@ -56,14 +58,10 @@ array_getreadbuf(PyArrayObject *self, Py_ssize_t segment, void **ptrptr)
 static Py_ssize_t
 array_getwritebuf(PyArrayObject *self, Py_ssize_t segment, void **ptrptr)
 {
-    if (PyArray_CHKFLAGS(self, WRITEABLE)) {
-        return array_getreadbuf(self, segment, (void **) ptrptr);
-    }
-    else {
-        PyErr_SetString(PyExc_ValueError, "array cannot be "
-                        "accessed as a writeable buffer");
+    if (PyArray_FailUnlessWriteable(self, "buffer source array") < 0) {
         return -1;
     }
+    return array_getreadbuf(self, segment, (void **) ptrptr);
 }
 
 static Py_ssize_t
@@ -71,6 +69,7 @@ array_getcharbuf(PyArrayObject *self, Py_ssize_t segment, constchar **ptrptr)
 {
     return array_getreadbuf(self, segment, (void **) ptrptr);
 }
+#endif /* !defined(NPY_PY3K) */
 
 
 /*************************************************************************
@@ -94,8 +93,6 @@ array_getcharbuf(PyArrayObject *self, Py_ssize_t segment, constchar **ptrptr)
  * Py_buffers.
  *************************************************************************/
 
-#if PY_VERSION_HEX >= 0x02060000
-
 /*
  * Format string translator
  *
@@ -105,27 +102,26 @@ array_getcharbuf(PyArrayObject *self, Py_ssize_t segment, constchar **ptrptr)
 /* Fast string 'class' */
 typedef struct {
     char *s;
-    int allocated;
-    int pos;
+    size_t allocated;
+    size_t pos;
 } _tmp_string_t;
+
+#define INIT_SIZE   16
 
 static int
 _append_char(_tmp_string_t *s, char c)
 {
-    char *p;
-    if (s->s == NULL) {
-        s->s = (char*)malloc(16);
-        s->pos = 0;
-        s->allocated = 16;
-    }
     if (s->pos >= s->allocated) {
-        p = (char*)realloc(s->s, 2*s->allocated);
+        char *p;
+        size_t to_alloc = (s->allocated == 0) ? INIT_SIZE : (2 * s->allocated);
+
+        p = realloc(s->s, to_alloc);
         if (p == NULL) {
             PyErr_SetString(PyExc_MemoryError, "memory allocation failed");
             return -1;
         }
         s->s = p;
-        s->allocated *= 2;
+        s->allocated = to_alloc;
     }
     s->s[s->pos] = c;
     ++s->pos;
@@ -133,11 +129,12 @@ _append_char(_tmp_string_t *s, char c)
 }
 
 static int
-_append_str(_tmp_string_t *s, char *c)
+_append_str(_tmp_string_t *s, char const *p)
 {
-    while (*c != '\0') {
-        if (_append_char(s, *c)) return -1;
-        ++c;
+    for (; *p != '\0'; p++) {
+        if (_append_char(s, *p) != 0) {
+            return -1;
+        }
     }
     return 0;
 }
@@ -153,7 +150,7 @@ _is_natively_aligned_at(PyArray_Descr *descr,
 {
     int k;
 
-    if ((Py_ssize_t)(arr->data) % descr->alignment != 0) {
+    if ((Py_ssize_t)(PyArray_DATA(arr)) % descr->alignment != 0) {
         return 0;
     }
 
@@ -165,9 +162,9 @@ _is_natively_aligned_at(PyArray_Descr *descr,
         return 0;
     }
 
-    for (k = 0; k < arr->nd; ++k) {
-        if (arr->dimensions[k] > 1) {
-            if (arr->strides[k] % descr->alignment != 0) {
+    for (k = 0; k < PyArray_NDIM(arr); ++k) {
+        if (PyArray_DIM(arr, k) > 1) {
+            if (PyArray_STRIDE(arr, k) % descr->alignment != 0) {
                 return 0;
             }
         }
@@ -193,19 +190,27 @@ _buffer_format_string(PyArray_Descr *descr, _tmp_string_t *str,
     }
 
     if (descr->subarray) {
-        PyObject *item;
+        PyObject *item, *subarray_tuple;
         Py_ssize_t total_count = 1;
         Py_ssize_t dim_size;
         char buf[128];
         int old_offset;
         int ret;
 
+        if (PyTuple_Check(descr->subarray->shape)) {
+            subarray_tuple = descr->subarray->shape;
+            Py_INCREF(subarray_tuple);
+        }
+        else {
+            subarray_tuple = Py_BuildValue("(O)", descr->subarray->shape);
+        }
+
         _append_char(str, '(');
-        for (k = 0; k < PyTuple_GET_SIZE(descr->subarray->shape); ++k) {
+        for (k = 0; k < PyTuple_GET_SIZE(subarray_tuple); ++k) {
             if (k > 0) {
                 _append_char(str, ',');
             }
-            item = PyTuple_GET_ITEM(descr->subarray->shape, k);
+            item = PyTuple_GET_ITEM(subarray_tuple, k);
             dim_size = PyNumber_AsSsize_t(item, NULL);
 
             PyOS_snprintf(buf, sizeof(buf), "%ld", (long)dim_size);
@@ -213,6 +218,9 @@ _buffer_format_string(PyArray_Descr *descr, _tmp_string_t *str,
             total_count *= dim_size;
         }
         _append_char(str, ')');
+
+        Py_DECREF(subarray_tuple);
+
         old_offset = *offset;
         ret = _buffer_format_string(descr->subarray->base, str, arr, offset,
                                     active_byteorder);
@@ -220,6 +228,8 @@ _buffer_format_string(PyArray_Descr *descr, _tmp_string_t *str,
         return ret;
     }
     else if (PyDataType_HASFIELDS(descr)) {
+        int base_offset = *offset;
+
         _append_str(str, "T{");
         for (k = 0; k < PyTuple_GET_SIZE(descr->names); ++k) {
             PyObject *name, *item, *offset_obj, *tmp;
@@ -233,14 +243,20 @@ _buffer_format_string(PyArray_Descr *descr, _tmp_string_t *str,
 
             child = (PyArray_Descr*)PyTuple_GetItem(item, 0);
             offset_obj = PyTuple_GetItem(item, 1);
-            new_offset = PyInt_AsLong(offset_obj);
+            new_offset = base_offset + PyInt_AsLong(offset_obj);
 
             /* Insert padding manually */
+            if (*offset > new_offset) {
+                PyErr_SetString(PyExc_RuntimeError,
+                                "This should never happen: Invalid offset in "
+                                "buffer format string generation. Please "
+                                "report a bug to the Numpy developers.");
+                return -1;
+            }
             while (*offset < new_offset) {
                 _append_char(str, 'x');
                 ++*offset;
             }
-            *offset += child->elsize;
 
             /* Insert child item */
             _buffer_format_string(child, str, arr, offset,
@@ -254,6 +270,7 @@ _buffer_format_string(PyArray_Descr *descr, _tmp_string_t *str,
             tmp = name;
 #endif
             if (tmp == NULL || PyBytes_AsStringAndSize(tmp, &p, &len) < 0) {
+                PyErr_Clear();
                 PyErr_SetString(PyExc_ValueError, "invalid field name");
                 return -1;
             }
@@ -281,11 +298,13 @@ _buffer_format_string(PyArray_Descr *descr, _tmp_string_t *str,
         int is_standard_size = 1;
         int is_native_only_type = (descr->type_num == NPY_LONGDOUBLE ||
                                    descr->type_num == NPY_CLONGDOUBLE);
-#if NPY_SIZEOF_LONG_LONG != 8
-        is_native_only_type = is_native_only_type || (
-            descr->type_num == NPY_LONGLONG ||
-            descr->type_num == NPY_ULONGLONG);
-#endif
+        if (sizeof(npy_longlong) != 8) {
+            is_native_only_type = is_native_only_type || (
+                descr->type_num == NPY_LONGLONG ||
+                descr->type_num == NPY_ULONGLONG);
+        }
+
+        *offset += descr->elsize;
 
         if (descr->byteorder == '=' &&
                 _is_natively_aligned_at(descr, arr, *offset)) {
@@ -313,12 +332,15 @@ _buffer_format_string(PyArray_Descr *descr, _tmp_string_t *str,
             }
 
             if (is_native_only_type) {
-                /* It's not possible to express native-only data types
-                   in non-native byte orders */
+                /*
+                 * It's not possible to express native-only data types
+                 * in non-native npy_byte orders
+                 */
                 PyErr_Format(PyExc_ValueError,
                              "cannot expose native-only dtype '%c' in "
                              "non-native byte order '%c' via buffer interface",
                              descr->type, descr->byteorder);
+                return -1;
             }
         }
 
@@ -348,6 +370,7 @@ _buffer_format_string(PyArray_Descr *descr, _tmp_string_t *str,
             break;
         case NPY_LONGLONG:     if (_append_char(str, 'q')) return -1; break;
         case NPY_ULONGLONG:    if (_append_char(str, 'Q')) return -1; break;
+        case NPY_HALF:         if (_append_char(str, 'e')) return -1; break;
         case NPY_FLOAT:        if (_append_char(str, 'f')) return -1; break;
         case NPY_DOUBLE:       if (_append_char(str, 'd')) return -1; break;
         case NPY_LONGDOUBLE:   if (_append_char(str, 'g')) return -1; break;
@@ -364,7 +387,7 @@ _buffer_format_string(PyArray_Descr *descr, _tmp_string_t *str,
             break;
         }
         case NPY_UNICODE: {
-            /* Numpy Unicode is always 4-byte */
+            /* NumPy Unicode is always 4-byte */
             char buf[128];
             assert(descr->elsize % 4 == 0);
             PyOS_snprintf(buf, sizeof(buf), "%dw", descr->elsize / 4);
@@ -422,15 +445,18 @@ static _buffer_info_t*
 _buffer_info_new(PyArrayObject *arr)
 {
     _buffer_info_t *info;
-    _tmp_string_t fmt = {0,0,0};
+    _tmp_string_t fmt = {NULL, 0, 0};
     int k;
 
-    info = (_buffer_info_t*)malloc(sizeof(_buffer_info_t));
+    info = malloc(sizeof(_buffer_info_t));
+    if (info == NULL) {
+        goto fail;
+    }
 
     /* Fill in format */
     if (_buffer_format_string(PyArray_DESCR(arr), &fmt, arr, NULL, NULL) != 0) {
-        free(info);
-        return NULL;
+        free(fmt.s);
+        goto fail;
     }
     _append_char(&fmt, '\0');
     info->format = fmt.s;
@@ -443,8 +469,10 @@ _buffer_info_new(PyArrayObject *arr)
         info->strides = NULL;
     }
     else {
-        info->shape = (Py_ssize_t*)malloc(sizeof(Py_ssize_t)
-                                          * PyArray_NDIM(arr) * 2 + 1);
+        info->shape = malloc(sizeof(Py_ssize_t) * PyArray_NDIM(arr) * 2 + 1);
+        if (info->shape == NULL) {
+            goto fail;
+        }
         info->strides = info->shape + PyArray_NDIM(arr);
         for (k = 0; k < PyArray_NDIM(arr); ++k) {
             info->shape[k] = PyArray_DIMS(arr)[k];
@@ -453,6 +481,10 @@ _buffer_info_new(PyArrayObject *arr)
     }
 
     return info;
+
+fail:
+    free(info);
+    return NULL;
 }
 
 /* Compare two info structures */
@@ -494,7 +526,7 @@ _buffer_info_free(_buffer_info_t *info)
 static _buffer_info_t*
 _buffer_get_info(PyObject *arr)
 {
-    PyObject *key, *item_list, *item;
+    PyObject *key = NULL, *item_list = NULL, *item = NULL;
     _buffer_info_t *info = NULL, *old_info = NULL;
 
     if (_buffer_info_cache == NULL) {
@@ -512,6 +544,9 @@ _buffer_get_info(PyObject *arr)
 
     /* Check if it is identical with an old one; reuse old one, if yes */
     key = PyLong_FromVoidPtr((void*)arr);
+    if (key == NULL) {
+        goto fail;
+    }
     item_list = PyDict_GetItem(_buffer_info_cache, key);
 
     if (item_list != NULL) {
@@ -528,12 +563,20 @@ _buffer_get_info(PyObject *arr)
     }
     else {
         item_list = PyList_New(0);
-        PyDict_SetItem(_buffer_info_cache, key, item_list);
+        if (item_list == NULL) {
+            goto fail;
+        }
+        if (PyDict_SetItem(_buffer_info_cache, key, item_list) != 0) {
+            goto fail;
+        }
     }
 
     if (info != old_info) {
         /* Needs insertion */
         item = PyLong_FromVoidPtr((void*)info);
+        if (item == NULL) {
+            goto fail;
+        }
         PyList_Append(item_list, item);
         Py_DECREF(item);
     }
@@ -541,6 +584,14 @@ _buffer_get_info(PyObject *arr)
     Py_DECREF(item_list);
     Py_DECREF(key);
     return info;
+
+fail:
+    if (info != NULL && info != old_info) {
+        _buffer_info_free(info);
+    }
+    Py_XDECREF(item_list);
+    Py_XDECREF(key);
+    return NULL;
 }
 
 /* Clear buffer info from the global dictionary */
@@ -583,31 +634,41 @@ array_getbuffer(PyObject *obj, Py_buffer *view, int flags)
 
     /* Check whether we can provide the wanted properties */
     if ((flags & PyBUF_C_CONTIGUOUS) == PyBUF_C_CONTIGUOUS &&
-        !PyArray_CHKFLAGS(self, NPY_C_CONTIGUOUS)) {
+            !PyArray_CHKFLAGS(self, NPY_ARRAY_C_CONTIGUOUS)) {
         PyErr_SetString(PyExc_ValueError, "ndarray is not C-contiguous");
         goto fail;
     }
     if ((flags & PyBUF_F_CONTIGUOUS) == PyBUF_F_CONTIGUOUS &&
-        !PyArray_CHKFLAGS(self, NPY_F_CONTIGUOUS)) {
+            !PyArray_CHKFLAGS(self, NPY_ARRAY_F_CONTIGUOUS)) {
         PyErr_SetString(PyExc_ValueError, "ndarray is not Fortran contiguous");
         goto fail;
     }
     if ((flags & PyBUF_ANY_CONTIGUOUS) == PyBUF_ANY_CONTIGUOUS
-        && !PyArray_ISONESEGMENT(self)) {
+            && !PyArray_ISONESEGMENT(self)) {
         PyErr_SetString(PyExc_ValueError, "ndarray is not contiguous");
         goto fail;
     }
     if ((flags & PyBUF_STRIDES) != PyBUF_STRIDES &&
-        (flags & PyBUF_ND) == PyBUF_ND &&
-        !PyArray_CHKFLAGS(self, NPY_C_CONTIGUOUS)) {
+            !PyArray_CHKFLAGS(self, NPY_ARRAY_C_CONTIGUOUS)) {
         /* Non-strided N-dim buffers must be C-contiguous */
         PyErr_SetString(PyExc_ValueError, "ndarray is not C-contiguous");
         goto fail;
     }
-    if ((flags & PyBUF_WRITEABLE) == PyBUF_WRITEABLE &&
-        !PyArray_ISWRITEABLE(self)) {
-        PyErr_SetString(PyExc_ValueError, "ndarray is not writeable");
-        goto fail;
+    if ((flags & PyBUF_WRITEABLE) == PyBUF_WRITEABLE) {
+        if (PyArray_FailUnlessWriteable(self, "buffer source array") < 0) {
+            goto fail;
+        }
+    }
+    /*
+     * If a read-only buffer is requested on a read-write array, we return a
+     * read-write buffer, which is dubious behavior. But that's why this call
+     * is guarded by PyArray_ISWRITEABLE rather than (flags &
+     * PyBUF_WRITEABLE).
+     */
+    if (PyArray_ISWRITEABLE(self)) {
+        if (array_might_be_written(self) < 0) {
+            goto fail;
+        }
     }
 
     if (view == NULL) {
@@ -642,6 +703,35 @@ array_getbuffer(PyObject *obj, Py_buffer *view, int flags)
     }
     if ((flags & PyBUF_STRIDES) == PyBUF_STRIDES) {
         view->strides = info->strides;
+
+#ifdef NPY_RELAXED_STRIDES_CHECKING
+        /*
+         * If NPY_RELAXED_STRIDES_CHECKING is on, the array may be
+         * contiguous, but it won't look that way to Python when it
+         * tries to determine contiguity by looking at the strides
+         * (since one of the elements may be -1).  In that case, just
+         * regenerate strides from shape.
+         */
+        if (PyArray_CHKFLAGS(self, NPY_ARRAY_C_CONTIGUOUS) &&
+                !((flags & PyBUF_F_CONTIGUOUS) == PyBUF_F_CONTIGUOUS)) {
+            Py_ssize_t sd = view->itemsize;
+            int i;
+
+            for (i = view->ndim-1; i >= 0; --i) {
+                view->strides[i] = sd;
+                sd *= view->shape[i];
+            }
+        }
+        else if (PyArray_CHKFLAGS(self, NPY_ARRAY_F_CONTIGUOUS)) {
+            Py_ssize_t sd = view->itemsize;
+            int i;
+
+            for (i = 0; i < view->ndim; ++i) {
+                view->strides[i] = sd;
+                sd *= view->shape[i];
+            }
+        }
+#endif
     }
     else {
         view->strides = NULL;
@@ -690,75 +780,74 @@ _array_dealloc_buffer_info(PyArrayObject *self)
     }
 }
 
-#else
-
-NPY_NO_EXPORT void
-_array_dealloc_buffer_info(PyArrayObject *self)
-{
-}
-
-#endif
 
 /*************************************************************************/
 
 NPY_NO_EXPORT PyBufferProcs array_as_buffer = {
 #if !defined(NPY_PY3K)
-#if PY_VERSION_HEX >= 0x02050000
     (readbufferproc)array_getreadbuf,       /*bf_getreadbuffer*/
     (writebufferproc)array_getwritebuf,     /*bf_getwritebuffer*/
     (segcountproc)array_getsegcount,        /*bf_getsegcount*/
     (charbufferproc)array_getcharbuf,       /*bf_getcharbuffer*/
-#else
-    (getreadbufferproc)array_getreadbuf,    /*bf_getreadbuffer*/
-    (getwritebufferproc)array_getwritebuf,  /*bf_getwritebuffer*/
-    (getsegcountproc)array_getsegcount,     /*bf_getsegcount*/
-    (getcharbufferproc)array_getcharbuf,    /*bf_getcharbuffer*/
 #endif
-#endif
-#if PY_VERSION_HEX >= 0x02060000
     (getbufferproc)array_getbuffer,
     (releasebufferproc)0,
-#endif
 };
 
 
 /*************************************************************************
  * Convert PEP 3118 format string to PyArray_Descr
  */
-#if PY_VERSION_HEX >= 0x02060000
+
+static int
+_descriptor_from_pep3118_format_fast(char *s, PyObject **result);
+
+static int
+_pep3118_letter_to_type(char letter, int native, int complex);
 
 NPY_NO_EXPORT PyArray_Descr*
 _descriptor_from_pep3118_format(char *s)
 {
     char *buf, *p;
     int in_name = 0;
+    int obtained;
     PyObject *descr;
     PyObject *str;
     PyObject *_numpy_internal;
 
     if (s == NULL) {
-        return PyArray_DescrNewFromType(PyArray_BYTE);
+        return PyArray_DescrNewFromType(NPY_BYTE);
+    }
+
+    /* Fast path */
+    obtained = _descriptor_from_pep3118_format_fast(s, &descr);
+    if (obtained) {
+        return (PyArray_Descr*)descr;
     }
 
     /* Strip whitespace, except from field names */
-    buf = (char*)malloc(strlen(s) + 1);
+    buf = malloc(strlen(s) + 1);
+    if (buf == NULL) {
+        return NULL;
+    }
     p = buf;
     while (*s != '\0') {
         if (*s == ':') {
             in_name = !in_name;
             *p = *s;
+            p++;
         }
         else if (in_name || !NumPyOS_ascii_isspace(*s)) {
             *p = *s;
+            p++;
         }
-        ++p;
-        ++s;
+        s++;
     }
     *p = '\0';
 
     str = PyUString_FromStringAndSize(buf, strlen(buf));
-    free(buf);
     if (str == NULL) {
+        free(buf);
         return NULL;
     }
 
@@ -766,6 +855,7 @@ _descriptor_from_pep3118_format(char *s)
     _numpy_internal = PyImport_ImportModule("numpy.core._internal");
     if (_numpy_internal == NULL) {
         Py_DECREF(str);
+        free(buf);
         return NULL;
     }
     descr = PyObject_CallMethod(
@@ -775,25 +865,119 @@ _descriptor_from_pep3118_format(char *s)
     if (descr == NULL) {
         PyErr_Format(PyExc_ValueError,
                      "'%s' is not a valid PEP 3118 buffer format string", buf);
+        free(buf);
         return NULL;
     }
     if (!PyArray_DescrCheck(descr)) {
         PyErr_Format(PyExc_RuntimeError,
                      "internal error: numpy.core._internal._dtype_from_pep3118 "
                      "did not return a valid dtype, got %s", buf);
+        Py_DECREF(descr);
+        free(buf);
         return NULL;
     }
+    free(buf);
     return (PyArray_Descr*)descr;
 }
 
-#else
+/*
+ * Fast path for parsing buffer strings corresponding to simple types.
+ *
+ * Currently, this deals only with single-element data types.
+ */
 
-NPY_NO_EXPORT PyArray_Descr*
-_descriptor_from_pep3118_format(char *s)
+static int
+_descriptor_from_pep3118_format_fast(char *s, PyObject **result)
 {
-    PyErr_SetString(PyExc_RuntimeError,
-                    "PEP 3118 is not supported on Python versions < 2.6");
-    return NULL;
+    PyArray_Descr *descr;
+
+    int is_standard_size = 0;
+    char byte_order = '=';
+    int is_complex = 0;
+
+    int type_num = NPY_BYTE;
+    int item_seen = 0;
+
+    for (; *s != '\0'; ++s) {
+        is_complex = 0;
+        switch (*s) {
+        case '@':
+        case '^':
+            /* ^ means no alignment; doesn't matter for a single element */
+            byte_order = '=';
+            is_standard_size = 0;
+            break;
+        case '<':
+            byte_order = '<';
+            is_standard_size = 1;
+            break;
+        case '>':
+        case '!':
+            byte_order = '>';
+            is_standard_size = 1;
+            break;
+        case '=':
+            byte_order = '=';
+            is_standard_size = 1;
+            break;
+        case 'Z':
+            is_complex = 1;
+            ++s;
+        default:
+            if (item_seen) {
+                /* Not a single-element data type */
+                return 0;
+            }
+            type_num = _pep3118_letter_to_type(*s, !is_standard_size,
+                                               is_complex);
+            if (type_num < 0) {
+                /* Something unknown */
+                return 0;
+            }
+            item_seen = 1;
+            break;
+        }
+    }
+
+    if (!item_seen) {
+        return 0;
+    }
+
+    descr = PyArray_DescrFromType(type_num);
+    if (byte_order == '=') {
+        *result = (PyObject*)descr;
+    }
+    else {
+        *result = (PyObject*)PyArray_DescrNewByteorder(descr, byte_order);
+        Py_DECREF(descr);
+    }
+
+    return 1;
 }
 
-#endif
+static int
+_pep3118_letter_to_type(char letter, int native, int complex)
+{
+    switch (letter)
+    {
+    case '?': return NPY_BOOL;
+    case 'b': return NPY_BYTE;
+    case 'B': return NPY_UBYTE;
+    case 'h': return native ? NPY_SHORT : NPY_INT16;
+    case 'H': return native ? NPY_USHORT : NPY_UINT16;
+    case 'i': return native ? NPY_INT : NPY_INT32;
+    case 'I': return native ? NPY_UINT : NPY_UINT32;
+    case 'l': return native ? NPY_LONG : NPY_INT32;
+    case 'L': return native ? NPY_ULONG : NPY_UINT32;
+    case 'q': return native ? NPY_LONGLONG : NPY_INT64;
+    case 'Q': return native ? NPY_ULONGLONG : NPY_UINT64;
+    case 'e': return NPY_HALF;
+    case 'f': return complex ? NPY_CFLOAT : NPY_FLOAT;
+    case 'd': return complex ? NPY_CDOUBLE : NPY_DOUBLE;
+    case 'g': return native ? (complex ? NPY_CLONGDOUBLE : NPY_LONGDOUBLE) : -1;
+    default:
+        /* Other unhandled cases */
+        return -1;
+    }
+    return -1;
+}

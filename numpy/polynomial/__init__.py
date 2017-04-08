@@ -13,11 +13,15 @@ implemented as operations on the coefficients.  Additional (module-specific)
 information can be found in the docstring for the module of interest.
 
 """
-from polynomial import *
-from chebyshev import *
-from legendre import *
-from polyutils import *
+from __future__ import division, absolute_import, print_function
 
-from numpy.testing import Tester
-test = Tester().test
-bench = Tester().bench
+from .polynomial import Polynomial
+from .chebyshev import Chebyshev
+from .legendre import Legendre
+from .hermite import Hermite
+from .hermite_e import HermiteE
+from .laguerre import Laguerre
+
+from numpy.testing.nosetester import _numpy_tester
+test = _numpy_tester().test
+bench = _numpy_tester().bench

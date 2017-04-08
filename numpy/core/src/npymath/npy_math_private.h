@@ -185,7 +185,6 @@ do {                                                            \
      */
     typedef npy_uint32 IEEEl2bitsrep_part;
 
-/* my machine */
 
     union IEEEl2bitsrep {
         npy_longdouble     e;
@@ -246,6 +245,44 @@ do {                                                            \
     #define LDBL_SIGN_SHIFT     15
 
     #define LDBL_NBIT           0x800000000
+
+    typedef npy_uint32 ldouble_man_t;
+    typedef npy_uint32 ldouble_exp_t;
+    typedef npy_uint32 ldouble_sign_t;
+#elif defined(HAVE_LDOUBLE_MOTOROLA_EXTENDED_12_BYTES_BE)
+    /*
+     * Motorola extended 80 bits precision. Bit representation is
+     *          |     s  |eeeeeeeeeeeeeee|  junk  |mmmmmmmm................mmmmmmm|
+     *          |  1 bit |    15 bits    | 16 bits|            64 bits            |
+     *          |             a[0]                |     a[1]     |    a[2]        |
+     *
+     * 16 low bits of a[0] are junk
+     */
+    typedef npy_uint32 IEEEl2bitsrep_part;
+
+
+    union IEEEl2bitsrep {
+        npy_longdouble     e;
+        IEEEl2bitsrep_part a[3];
+    };
+
+    #define LDBL_MANL_INDEX     2
+    #define LDBL_MANL_MASK      0xFFFFFFFF
+    #define LDBL_MANL_SHIFT     0
+
+    #define LDBL_MANH_INDEX     1
+    #define LDBL_MANH_MASK      0xFFFFFFFF
+    #define LDBL_MANH_SHIFT     0
+
+    #define LDBL_EXP_INDEX      0
+    #define LDBL_EXP_MASK       0x7FFF0000
+    #define LDBL_EXP_SHIFT      16
+
+    #define LDBL_SIGN_INDEX     0
+    #define LDBL_SIGN_MASK      0x80000000
+    #define LDBL_SIGN_SHIFT     31
+
+    #define LDBL_NBIT           0x80000000
 
     typedef npy_uint32 ldouble_man_t;
     typedef npy_uint32 ldouble_exp_t;
@@ -398,7 +435,8 @@ do {                                                            \
     typedef npy_uint32 ldouble_sign_t;
 #endif
 
-#ifndef HAVE_LDOUBLE_DOUBLE_DOUBLE_BE
+#if !defined(HAVE_LDOUBLE_DOUBLE_DOUBLE_BE) && \
+    !defined(HAVE_LDOUBLE_DOUBLE_DOUBLE_LE)
 /* Get the sign bit of x. x should be of type IEEEl2bitsrep */
 #define GET_LDOUBLE_SIGN(x) \
     (((x).a[LDBL_SIGN_INDEX] & LDBL_SIGN_MASK) >> LDBL_SIGN_SHIFT)
@@ -447,6 +485,28 @@ do {                                                            \
  * support is available
  */
 #ifdef NPY_USE_C99_COMPLEX
+
+/*
+ * Microsoft C defines _MSC_VER
+ * Intel compiler does not use MSVC complex types, but defines _MSC_VER by
+ * default.
+ */
+#if defined(_MSC_VER) && !defined(__INTEL_COMPILER)
+typedef union {
+        npy_cdouble npy_z;
+        _Dcomplex c99_z;
+} __npy_cdouble_to_c99_cast;
+
+typedef union {
+        npy_cfloat npy_z;
+        _Fcomplex c99_z;
+} __npy_cfloat_to_c99_cast;
+
+typedef union {
+        npy_clongdouble npy_z;
+        _Lcomplex c99_z;
+} __npy_clongdouble_to_c99_cast;
+#else /* !_MSC_VER */
 typedef union {
         npy_cdouble npy_z;
         complex double c99_z;
@@ -461,7 +521,9 @@ typedef union {
         npy_clongdouble npy_z;
         complex long double c99_z;
 } __npy_clongdouble_to_c99_cast;
-#else
+#endif /* !_MSC_VER */
+
+#else /* !NPY_USE_C99_COMPLEX */
 typedef union {
         npy_cdouble npy_z;
         npy_cdouble c99_z;
@@ -476,6 +538,7 @@ typedef union {
         npy_clongdouble npy_z;
         npy_clongdouble c99_z;
 } __npy_clongdouble_to_c99_cast;
-#endif
+#endif /* !NPY_USE_C99_COMPLEX */
+
 
 #endif /* !_NPY_MATH_PRIVATE_H_ */

@@ -315,8 +315,8 @@ new valid values to them::
       >>> x.soften_mask()
       >>> x[-1] = 5
       >>> x
-      masked_array(data = [1 2 --],
-                   mask = [False False  True],
+      masked_array(data = [1 2 5],
+                   mask = [False False  False],
              fill_value = 999999)
       >>> x.harden_mask()
 
@@ -391,7 +391,7 @@ required to avoid propagation of any modification of the mask to the original.
    >>> mx[1] = -1
    >>> mx
    masked_array(data = [1 -1 3],
-                mask = [False  True False],
+                mask = [False False False],
           fill_value = 999999)
    >>> x.mask
    array([False,  True, False, False,  True], dtype=bool)

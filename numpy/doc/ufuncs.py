@@ -6,7 +6,7 @@ Universal Functions
 Ufuncs are, generally speaking, mathematical functions or operations that are
 applied element-by-element to the contents of an array. That is, the result
 in each output array element only depends on the value in the corresponding
-input array (or arrays) and on no other array elements. Numpy comes with a
+input array (or arrays) and on no other array elements. NumPy comes with a
 large suite of ufuncs, and scipy extends that suite substantially. The simplest
 example is the addition operator: ::
 
@@ -135,3 +135,4 @@ results in an error. There are two alternatives:
     a convenient way to apply these operators.
 
 """
+from __future__ import division, absolute_import, print_function

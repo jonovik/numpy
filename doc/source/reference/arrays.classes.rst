@@ -1,3 +1,5 @@
+.. _arrays.classes:
+
 #########################
 Standard array subclasses
 #########################
@@ -22,7 +24,7 @@ subclass of an ndarray, then :func:`asanyarray` can be used to allow
 subclasses to propagate more cleanly through your subroutine. In
 principal a subclass could redefine any aspect of the array and
 therefore, under strict guidelines, :func:`asanyarray` would rarely be
-useful. However, most subclasses of the arrayobject will not
+useful. However, most subclasses of the array object will not
 redefine certain aspects of the array object such as the buffer
 interface, or the attributes of the array. One important example,
 however, of why your subroutine may not be able to handle an arbitrary
@@ -35,10 +37,79 @@ Special attributes and methods
 
 .. seealso:: :ref:`Subclassing ndarray <basics.subclassing>`
 
-Numpy provides several hooks that subclasses of :class:`ndarray` can
-customize:
+NumPy provides several hooks that classes can customize:
 
-.. function:: __array_finalize__(self)
+.. method:: class.__numpy_ufunc__(ufunc, method, i, inputs, **kwargs)
+
+   .. versionadded:: 1.11
+
+   Any class (ndarray subclass or not) can define this method to
+   override behavior of NumPy's ufuncs. This works quite similarly to
+   Python's ``__mul__`` and other binary operation routines.
+
+   - *ufunc* is the ufunc object that was called.
+   - *method* is a string indicating which Ufunc method was called
+     (one of ``"__call__"``, ``"reduce"``, ``"reduceat"``,
+     ``"accumulate"``, ``"outer"``, ``"inner"``).
+   - *i* is the index of *self* in *inputs*.
+   - *inputs* is a tuple of the input arguments to the ``ufunc``
+   - *kwargs* is a dictionary containing the optional input arguments
+     of the ufunc. The ``out`` argument is always contained in
+     *kwargs*, if given. See the discussion in :ref:`ufuncs` for
+     details.
+
+   The method should return either the result of the operation, or
+   :obj:`NotImplemented` if the operation requested is not
+   implemented.
+
+   If one of the arguments has a :func:`__numpy_ufunc__` method, it is
+   executed *instead* of the ufunc.  If more than one of the input
+   arguments implements :func:`__numpy_ufunc__`, they are tried in the
+   order: subclasses before superclasses, otherwise left to right. The
+   first routine returning something else than :obj:`NotImplemented`
+   determines the result. If all of the :func:`__numpy_ufunc__`
+   operations return :obj:`NotImplemented`, a :exc:`TypeError` is
+   raised.
+
+   If an :class:`ndarray` subclass defines the :func:`__numpy_ufunc__`
+   method, this disables the :func:`__array_wrap__`,
+   :func:`__array_prepare__`, :data:`__array_priority__` mechanism
+   described below.
+
+   .. note:: In addition to ufuncs, :func:`__numpy_ufunc__` also
+      overrides the behavior of :func:`numpy.dot` even though it is
+      not an Ufunc.
+
+   .. note:: If you also define right-hand binary operator override
+      methods (such as ``__rmul__``) or comparison operations (such as
+      ``__gt__``) in your class, they take precedence over the
+      :func:`__numpy_ufunc__` mechanism when resolving results of
+      binary operations (such as ``ndarray_obj * your_obj``).
+
+      The technical special case is: ``ndarray.__mul__`` returns
+      ``NotImplemented`` if the other object is *not* a subclass of
+      :class:`ndarray`, and defines both ``__numpy_ufunc__`` and
+      ``__rmul__``. Similar exception applies for the other operations
+      than multiplication.
+
+      In such a case, when computing a binary operation such as
+      ``ndarray_obj * your_obj``, your ``__numpy_ufunc__`` method
+      *will not* be called.  Instead, the execution passes on to your
+      right-hand ``__rmul__`` operation, as per standard Python
+      operator override rules.
+
+      Similar special case applies to *in-place operations*: If you
+      define ``__rmul__``, then ``ndarray_obj *= your_obj`` *will not*
+      call your ``__numpy_ufunc__`` implementation. Instead, the
+      default Python behavior ``ndarray_obj = ndarray_obj * your_obj``
+      occurs.
+
+      Note that the above discussion applies only to Python's builtin
+      binary operation mechanism. ``np.multiply(ndarray_obj,
+      your_obj)`` always calls only your ``__numpy_ufunc__``, as
+      expected.
+
+.. method:: class.__array_finalize__(obj)
 
    This method is called whenever the system internally allocates a
    new array from *obj*, where *obj* is a subclass (subtype) of the
@@ -47,7 +118,7 @@ customize:
    to update meta-information from the "parent." Subclasses inherit
    a default implementation of this method that does nothing.
 
-.. function:: __array_prepare__(array, context=None)
+.. method:: class.__array_prepare__(array, context=None)
 
    At the beginning of every :ref:`ufunc <ufuncs.output-type>`, this
    method is called on the input object with the highest array
@@ -59,7 +130,7 @@ customize:
    the subclass and update metadata before returning the array to the
    ufunc for computation.
 
-.. function:: __array_wrap__(array, context=None)
+.. method:: class.__array_wrap__(array, context=None)
 
    At the end of every :ref:`ufunc <ufuncs.output-type>`, this method
    is called on the input object with the highest array priority, or
@@ -71,18 +142,21 @@ customize:
    into an instance of the subclass and update metadata before
    returning the array to the user.
 
-.. data:: __array_priority__
+.. data:: class.__array_priority__
 
    The value of this attribute is used to determine what type of
    object to return in situations where there is more than one
    possibility for the Python type of the returned object. Subclasses
-   inherit a default value of 1.0 for this attribute.
+   inherit a default value of 0.0 for this attribute.
 
-.. function:: __array__([dtype])
+.. method:: class.__array__([dtype])
 
-   If a class having the :obj:`__array__` method is used as the output
-   object of an :ref:`ufunc <ufuncs.output-type>`, results will be
-   written to the object returned by :obj:`__array__`.
+   If a class (ndarray subclass or not) having the :func:`__array__`
+   method is used as the output object of an :ref:`ufunc
+   <ufuncs.output-type>`, results will be written to the object
+   returned by :func:`__array__`. Similar conversion is done on
+   input arrays.
+
 
 Matrix objects
 ==============
@@ -193,13 +267,6 @@ they inherit from the ndarray): :meth:`.flush() <memmap.flush>` which
 must be called manually by the user to ensure that any changes to the
 array actually get written to disk.
 
-.. note::
-
-    Memory-mapped arrays use the the Python memory-map object which
-    (prior to Python 2.5) does not allow files to be larger than a
-    certain size depending on the platform. This size is always
-    < 2GB even on 64-bit systems.
-
 .. autosummary::
    :toctree: generated/
 
@@ -269,8 +336,8 @@ Record arrays (:mod:`numpy.rec`)
 .. seealso:: :ref:`routines.array-creation.rec`, :ref:`routines.dtype`,
              :ref:`arrays.dtypes`.
 
-Numpy provides the :class:`recarray` class which allows accessing the
-fields of a record/structured array as attributes, and a corresponding
+NumPy provides the :class:`recarray` class which allows accessing the
+fields of a structured array as attributes, and a corresponding
 scalar data type object :class:`record`.
 
 .. currentmodule:: numpy
@@ -340,7 +407,7 @@ The default iterator of an ndarray object is the default Python
 iterator of a sequence type. Thus, when the array object itself is
 used as an iterator. The default behavior is equivalent to::
 
-    for i in xrange(arr.shape[0]):
+    for i in range(arr.shape[0]):
         val = arr[i]
 
 This default iterator selects a sub-array of dimension :math:`N-1`

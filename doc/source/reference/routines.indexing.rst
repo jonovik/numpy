@@ -20,7 +20,7 @@ Generating index arrays
    indices
    ix_
    ogrid
-   ravel_coords
+   ravel_multi_index
    unravel_index
    diag_indices
    diag_indices_from
@@ -57,6 +57,8 @@ Iterating over arrays
 .. autosummary::
    :toctree: generated/
 
+   nditer
    ndenumerate
    ndindex
    flatiter
+   lib.Arrayterator

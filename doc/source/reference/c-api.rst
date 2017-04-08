@@ -1,7 +1,7 @@
 .. _c-api:
 
 ###########
-Numpy C-API
+NumPy C-API
 ###########
 
 .. sectionauthor:: Travis E. Oliphant
@@ -44,6 +44,8 @@ code.
    c-api.config
    c-api.dtype
    c-api.array
+   c-api.iterator
    c-api.ufunc
    c-api.generalized-ufuncs
    c-api.coremath
+   c-api.deprecations

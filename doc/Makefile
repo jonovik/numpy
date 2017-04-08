@@ -1,7 +1,7 @@
 # Makefile for Sphinx documentation
 #
 
-PYVER =
+PYVER = 2.7
 PYTHON = python$(PYVER)
 
 # You can set these variables from the command line.
@@ -24,14 +24,15 @@ ALLSPHINXOPTS   = -d build/doctrees $(PAPEROPT_$(PAPER)) $(SPHINXOPTS) source
 help:
 	@echo "Please use \`make <target>' where <target> is one of"
 	@echo "  html      to make standalone HTML files"
+	@echo "  html-scipyorg  to make standalone HTML files with scipy.org theming"
 	@echo "  pickle    to make pickle files (usable by e.g. sphinx-web)"
 	@echo "  htmlhelp  to make HTML files and a HTML help project"
 	@echo "  latex     to make LaTeX files, you can set PAPER=a4 or PAPER=letter"
 	@echo "  changes   to make an overview over all changed/added/deprecated items"
 	@echo "  linkcheck to check all external links for integrity"
 	@echo "  dist PYVER=... to make a distribution-ready tree"
-	@echo "  upload USER=...  to upload results to docs.scipy.org"
 	@echo "  gitwash-update GITWASH=path/to/gitwash  update gitwash developer docs"
+	@echo "  upload USERNAME=... RELEASE=... to upload built docs to docs.scipy.org"
 
 clean:
 	-rm -rf build/* source/reference/generated
@@ -56,47 +57,52 @@ gitwash-update:
 # - Different versions of easy_install install to different directories (!)
 #
 
+
 INSTALL_DIR = $(CURDIR)/build/inst-dist/
 INSTALL_PPH = $(INSTALL_DIR)/lib/python$(PYVER)/site-packages:$(INSTALL_DIR)/local/lib/python$(PYVER)/site-packages:$(INSTALL_DIR)/lib/python$(PYVER)/dist-packages:$(INSTALL_DIR)/local/lib/python$(PYVER)/dist-packages
+UPLOAD_DIR=/srv/docs_scipy_org/doc/numpy-$(RELEASE)
 
 DIST_VARS=SPHINXBUILD="LANG=C PYTHONPATH=$(INSTALL_PPH) python$(PYVER) `which sphinx-build`" PYTHON="PYTHONPATH=$(INSTALL_PPH) python$(PYVER)" SPHINXOPTS="$(SPHINXOPTS)"
-
-UPLOAD_TARGET = $(USER)@docs.scipy.org:/home/docserver/www-root/doc/numpy/
-
-upload:
-	@test -e build/dist || { echo "make dist is required first"; exit 1; }
-	@test output-is-fine -nt build/dist || { \
-		echo "Review the output in build/dist, and do 'touch output-is-fine' before uploading."; exit 1; }
-	rsync -r -z --delete-after -p \
-	    $(if $(shell test -f build/dist/numpy-ref.pdf && echo "y"),, \
-	         --exclude '**-ref.pdf' --exclude '**-user.pdf') \
-	    $(if $(shell test -f build/dist/numpy-chm.zip && echo "y"),, \
-	         --exclude '**-chm.zip') \
-	    build/dist/ $(UPLOAD_TARGET)
 
 dist:
 	make $(DIST_VARS) real-dist
 
-real-dist: dist-build html
+real-dist: dist-build html html-scipyorg
 	test -d build/latex || make latex
 	make -C build/latex all-pdf
 	-test -d build/htmlhelp || make htmlhelp-build
 	-rm -rf build/dist
-	cp -r build/html build/dist
-	perl -pi -e 's#^\s*(<li><a href=".*?">NumPy.*?Manual.*?&raquo;</li>)#<li><a href="/">Numpy and Scipy Documentation</a> &raquo;</li>#;' build/dist/*.html build/dist/*/*.html build/dist/*/*/*.html
+	cp -r build/html-scipyorg build/dist
 	cd build/html && zip -9r ../dist/numpy-html.zip .
-	cp build/latex/numpy-*.pdf build/dist
-	-zip build/dist/numpy-chm.zip build/htmlhelp/numpy.chm
+	cp build/latex/numpy-ref.pdf build/dist
+	cp build/latex/numpy-user.pdf build/dist
 	cd build/dist && tar czf ../dist.tar.gz *
 	chmod ug=rwX,o=rX -R build/dist
 	find build/dist -type d -print0 | xargs -0r chmod g+s
 
 dist-build:
 	rm -f ../dist/*.egg
-	cd .. && $(PYTHON) setupegg.py bdist_egg
+	cd .. && $(PYTHON) setup.py bdist_egg
 	install -d $(subst :, ,$(INSTALL_PPH))
 	$(PYTHON) `which easy_install` --prefix=$(INSTALL_DIR) ../dist/*.egg
 
+upload:
+	# SSH must be correctly configured for this to work.
+	# Assumes that ``make dist`` was already run
+	# Example usage: ``make upload USERNAME=rgommers RELEASE=1.10.1``
+	ssh $(USERNAME)@new.scipy.org mkdir $(UPLOAD_DIR)
+	scp build/dist.tar.gz $(USERNAME)@new.scipy.org:$(UPLOAD_DIR)
+	ssh $(USERNAME)@new.scipy.org tar xvC $(UPLOAD_DIR) \
+	    -zf $(UPLOAD_DIR)/dist.tar.gz
+	ssh $(USERNAME)@new.scipy.org mv $(UPLOAD_DIR)/numpy-ref.pdf \
+	    $(UPLOAD_DIR)/numpy-ref-$(RELEASE).pdf
+	ssh $(USERNAME)@new.scipy.org mv $(UPLOAD_DIR)/numpy-user.pdf \
+	    $(UPLOAD_DIR)/numpy-user-$(RELEASE).pdf
+	ssh $(USERNAME)@new.scipy.org mv $(UPLOAD_DIR)/numpy-html.zip \
+	    $(UPLOAD_DIR)/numpy-html-$(RELEASE).zip
+	ssh $(USERNAME)@new.scipy.org rm $(UPLOAD_DIR)/dist.tar.gz
+	ssh $(USERNAME)@new.scipy.org ln -snf numpy-$(RELEASE) /srv/docs_scipy_org/doc/numpy
+	ssh $(USERNAME)@new.scipy.org /srv/bin/fixperm-scipy_org.sh
 
 #------------------------------------------------------------------------------
 # Basic Sphinx generation rules for different formats
@@ -111,6 +117,12 @@ html: generate
 	mkdir -p build/html build/doctrees
 	$(SPHINXBUILD) -b html $(ALLSPHINXOPTS) build/html $(FILES)
 	$(PYTHON) postprocess.py html build/html/*.html
+	@echo
+	@echo "Build finished. The HTML pages are in build/html."
+
+html-scipyorg:
+	mkdir -p build/html build/doctrees
+	$(SPHINXBUILD) -t scipyorg -b html $(ALLSPHINXOPTS) build/html-scipyorg $(FILES)
 	@echo
 	@echo "Build finished. The HTML pages are in build/html."
 
@@ -166,3 +178,16 @@ linkcheck: generate
 	@echo
 	@echo "Link check complete; look for any errors in the above output " \
 	      "or in build/linkcheck/output.txt."
+
+texinfo:
+	$(SPHINXBUILD) -b texinfo $(ALLSPHINXOPTS) build/texinfo
+	@echo
+	@echo "Build finished. The Texinfo files are in build/texinfo."
+	@echo "Run \`make' in that directory to run these through makeinfo" \
+	      "(use \`make info' here to do that automatically)."
+
+info:
+	$(SPHINXBUILD) -b texinfo $(ALLSPHINXOPTS) build/texinfo
+	@echo "Running Texinfo files through makeinfo..."
+	make -C build/texinfo info
+	@echo "makeinfo finished; the Info files are in build/texinfo."

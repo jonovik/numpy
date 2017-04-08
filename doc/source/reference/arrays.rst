@@ -20,7 +20,7 @@ with every array. In addition to basic types (integers, floats,
 
 An item extracted from an array, *e.g.*, by indexing, is represented
 by a Python object whose type is one of the :ref:`array scalar types
-<arrays.scalars>` built in Numpy. The array scalars allow easy manipulation
+<arrays.scalars>` built in NumPy. The array scalars allow easy manipulation
 of also more complicated arrangements of data.
 
 .. figure:: figures/threefundamental.png
@@ -42,6 +42,8 @@ of also more complicated arrangements of data.
    arrays.scalars
    arrays.dtypes
    arrays.indexing
+   arrays.nditer
    arrays.classes
    maskedarray
    arrays.interface
+   arrays.datetime

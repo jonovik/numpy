@@ -14,6 +14,7 @@ lstsq           Solve linear least-squares problem
 pinv            Pseudo-inverse (Moore-Penrose) calculated using a singular
                 value decomposition
 matrix_power    Integer power of a square matrix
+matrix_rank     Calculate matrix rank using an SVD-based method
 =============== ==========================================================
 
 =============== ==========================================================
@@ -42,11 +43,13 @@ LinAlgError     Indicates a failed linear algebra operation
 =============== ==========================================================
 
 """
+from __future__ import division, absolute_import, print_function
+
 # To get sub-modules
-from info import __doc__
+from .info import __doc__
 
-from linalg import *
+from .linalg import *
 
-from numpy.testing import Tester
-test = Tester().test
-bench = Tester().test
+from numpy.testing.nosetester import _numpy_tester
+test = _numpy_tester().test
+bench = _numpy_tester().bench

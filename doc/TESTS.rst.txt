@@ -9,7 +9,7 @@ Introduction
 ''''''''''''
 
 SciPy uses the `Nose testing system
-<http://www.somethingaboutorange.com/mrl/projects/nose>`__, with some
+<http://nose.readthedocs.io>`__, with some
 minor convenience features added.  Nose is an extension of the unit
 testing framework offered by `unittest.py
 <http://docs.python.org/lib/module-unittest.html>`__. Our goal is that
@@ -41,25 +41,18 @@ follows::
   >>> import numpy
   >>> numpy.test()
 
-Note that for Python >= 2.7 deprecation warnings are silent by default. They
-can be turned on (recommended after installation and before upgrading) by
-starting the interpreter with the -Wd switch, or by::
+The test method may take two or more arguments; the first, ``label`` is a
+string specifying what should be tested and the second, ``verbose`` is an
+integer giving the level of output verbosity. See the docstring for
+numpy.test for details.  The default value for ``label`` is 'fast' - which
+will run the standard tests.  The string 'full' will run the full battery
+of tests, including those identified as being slow to run. If ``verbose``
+is 1 or less, the tests will just show information messages about the tests
+that are run; but if it is greater than 1, then the tests will also provide
+warnings on missing tests. So if you want to run every test and get
+messages about which modules don't have tests::
 
-  >>> import warnings
-  >>> wwarnings.simplefilter('always', DeprecationWarning)
-
-The test method may take two or more arguments; the first is a string
-label specifying what should be tested and the second is an integer
-giving the level of output verbosity. See the docstring for numpy.test
-for details.  The default value for the label is 'fast' - which will
-run the standard tests.  The string 'full' will run the full battery
-of tests, including those identified as being slow to run. If the
-verbosity is 1 or less, the tests will just show information messages
-about the tests that are run; but if it is greater than 1, then the
-tests will also provide warnings on missing tests. So if you want to
-run every test and get messages about which modules don't have tests::
-
-  >>> scipy.test(label='full', verbosity=2) # or scipy.test('full', 2)
+  >>> scipy.test(label='full', verbose=2) # or scipy.test('full', 2)
 
 Finally, if you are only interested in testing a subset of SciPy, for
 example, the ``integrate`` module, use the following::
@@ -75,7 +68,7 @@ you'd like to become part of SciPy, please write the tests as you
 develop the package. Also since much of SciPy is legacy code that was
 originally written without unit tests, there are still several modules
 that don't have tests yet. Please feel free to choose one of these
-modules to develop test for either after or even as you read through
+modules and develop tests for it as you read through
 this introduction.
 
 Writing your own tests
@@ -113,6 +106,11 @@ Within these test methods, ``assert_()`` and related functions are used to test
 whether a certain assumption is valid. If the assertion fails, the test fails.
 Note that the Python builtin ``assert`` should not be used, because it is
 stripped during compilation with ``-O``.
+
+Note that ``test_`` functions or methods should not have a docstring, because
+that makes it hard to identify the test from the output of running the test
+suite with ``verbose=2`` (or similar verbosity setting).  Use plain comments
+(``#``) if necessary.
 
 Sometimes it is convenient to run ``test_yyy.py`` by itself, so we add
 
@@ -181,7 +179,7 @@ nose decorators::
 
   @nose.with_setup(setup_func, teardown_func)
   def test_with_extras():
-      """This test uses the setup/teardown functions."""
+      # This test uses the setup/teardown functions.
       global helpful_variable
       print "  In test_with_extras"
       print "  Helpful is %s" % helpful_variable
@@ -201,9 +199,18 @@ with test generators::
       for i in range(0,4,2):
           yield check_even, i, i*3
 
-Note that 'check_even' is not itself a test (no 'test' in the name),
-but 'test_evens' is a generator that returns a series of tests, using
-'check_even', across a range of inputs.
+Note that ``check_even`` is not itself a test (no 'test' in the name),
+but ``test_evens`` is a generator that returns a series of tests, using
+``check_even``, across a range of inputs.
+
+A problem with generator tests can be that if a test is failing, it's
+hard to see for which parameters.  To avoid this problem, ensure that:
+
+  - No computation related to the features tested is done in the
+    ``test_*`` generator function, but delegated to a corresponding
+    ``check_*`` function (can be inside the generator, to share namespace).
+  - The generators are used *solely* for loops over parameters.
+  - Those parameters are *not* arrays.
 
 .. warning::
 
@@ -213,7 +220,7 @@ but 'test_evens' is a generator that returns a series of tests, using
 Doctests
 --------
 
-Doctests are a convenient way of documenting the behavior a function
+Doctests are a convenient way of documenting the behavior of a function
 and allowing that behavior to be tested at the same time.  The output
 of an interactive Python session can be included in the docstring of a
 function, and the test framework can run the example and compare the
@@ -227,8 +234,10 @@ for numpy.lib::
 >>> np.lib.test(doctests=True)
 
 The doctests are run as if they are in a fresh Python instance which
-has executed ``import numpy as np`` (tests that are part of the SciPy
-package also have an implicit ``import scipy as sp``).
+has executed ``import numpy as np``. Tests that are part of a SciPy
+subpackage will have that subpackage already imported. E.g. for a test
+in ``scipy/linalg/tests/``, the namespace will be created such that
+``from scipy import linalg`` has already executed.
 
 
 ``tests/``
@@ -236,7 +245,7 @@ package also have an implicit ``import scipy as sp``).
 
 Rather than keeping the code and the tests in the same directory, we
 put all the tests for a given subpackage in a ``tests/``
-subdirectory. For our example, if it doesn't all ready exist you will
+subdirectory. For our example, if it doesn't already exist you will
 need to create a ``tests/`` directory in ``scipy/xxx/``. So the path
 for ``test_yyy.py`` is ``scipy/xxx/tests/test_yyy.py``.
 
@@ -362,6 +371,16 @@ failure by passing ``True`` as the first argument to ``skipif`` or
 
 A total of the number of skipped and known failing tests is displayed
 at the end of the test run.  Skipped tests are marked as ``'S'`` in
-the test results (or ``'SKIPPED'`` for ``verbosity > 1``), and known
-failing tests are marked as ``'K'`` (or ``'KNOWN'`` if ``verbosity >
+the test results (or ``'SKIPPED'`` for ``verbose > 1``), and known
+failing tests are marked as ``'K'`` (or ``'KNOWN'`` if ``verbose >
 1``).
+
+Tests on random data
+--------------------
+
+Tests on random data are good, but since test failures are meant to expose
+new bugs or regressions, a test that passes most of the time but fails
+occasionally with no code changes is not helpful. Make the random data
+deterministic by setting the random number seed before generating it.  Use
+either Python's ``random.seed(some_number)`` or NumPy's
+``numpy.random.seed(some_number)``, depending on the source of random numbers.

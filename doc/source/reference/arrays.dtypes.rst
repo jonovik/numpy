@@ -14,51 +14,54 @@ following aspects of the data:
 1. Type of the data (integer, float, Python object, etc.)
 2. Size of the data (how many bytes is in *e.g.* the integer)
 3. Byte order of the data (:term:`little-endian` or :term:`big-endian`)
-4. If the data type is a :term:`record`, an aggregate of other
+4. If the data type is :term:`structured`, an aggregate of other
    data types, (*e.g.*, describing an array item consisting of
    an integer and a float),
 
-   1. what are the names of the ":term:`fields <field>`" of the record,
-      by which they can be :ref:`accessed <arrays.indexing.rec>`,
+   1. what are the names of the ":term:`fields <field>`" of the structure,
+      by which they can be :ref:`accessed <arrays.indexing.fields>`,
    2. what is the data-type of each :term:`field`, and
    3. which part of the memory block each field takes.
 
-5. If the data is a sub-array, what is its shape and data type.
+5. If the data type is a sub-array, what is its shape and data type.
 
 .. index::
    pair: dtype; scalar
 
 To describe the type of scalar data, there are several :ref:`built-in
-scalar types <arrays.scalars.built-in>` in Numpy for various precision
+scalar types <arrays.scalars.built-in>` in NumPy for various precision
 of integers, floating-point numbers, *etc*. An item extracted from an
 array, *e.g.*, by indexing, will be a Python object whose type is the
 scalar type associated with the data type of the array.
 
 Note that the scalar types are not :class:`dtype` objects, even though
 they can be used in place of one whenever a data type specification is
-needed in Numpy.
+needed in NumPy.
 
 .. index::
    pair: dtype; field
-   pair: dtype; record
 
-Record data types are formed by creating a data type whose
+Structured data types are formed by creating a data type whose
 :term:`fields` contain other data types. Each field has a name by
-which it can be :ref:`accessed <arrays.indexing.rec>`. The parent data
+which it can be :ref:`accessed <arrays.indexing.fields>`. The parent data
 type should be of sufficient size to contain all its fields; the
-parent can for example be based on the :class:`void` type which allows
-an arbitrary item size. Record data types may also contain other record
-types and fixed-size sub-array data types in their fields.
+parent is nearly always based on the :class:`void` type which allows
+an arbitrary item size. Structured data types may also contain nested
+structured sub-array data types in their fields.
 
 .. index::
    pair: dtype; sub-array
 
 Finally, a data type can describe items that are themselves arrays of
 items of another data type. These sub-arrays must, however, be of a
-fixed size. If an array is created using a data-type describing a
-sub-array, the dimensions of the sub-array are appended to the shape
+fixed size.
+
+If an array is created using a data-type describing a sub-array,
+the dimensions of the sub-array are appended to the shape
 of the array when the array is created. Sub-arrays in a field of a
-record behave differently, see :ref:`arrays.indexing.rec`.
+structured type behave differently, see :ref:`arrays.indexing.fields`.
+
+Sub-arrays always have a C-contiguous memory layout.
 
 .. admonition:: Example
 
@@ -79,7 +82,7 @@ record behave differently, see :ref:`arrays.indexing.rec`.
 
 .. admonition:: Example
 
-   A record data type containing a 16-character string (in field 'name')
+   A structured data type containing a 16-character string (in field 'name')
    and a sub-array of two 64-bit floating-point number (in field 'grades'):
 
    >>> dt = np.dtype([('name', np.str_, 16), ('grades', np.float64, (2,))])
@@ -216,17 +219,23 @@ One-character strings
 Array-protocol type strings (see :ref:`arrays.interface`)
 
    The first character specifies the kind of data and the remaining
-   characters specify how many bytes of data. The supported kinds are
+   characters specify the number of bytes per item, except for Unicode,
+   where it is interpreted as the number of characters.  The item size
+   must correspond to an existing type, or an error will be raised.  The
+   supported kinds are
 
    ================   ========================
-   ``'b'``            Boolean
+   ``'b'``            boolean
    ``'i'``            (signed) integer
    ``'u'``            unsigned integer
    ``'f'``            floating-point
    ``'c'``            complex-floating point
-   ``'S'``, ``'a'``   string
-   ``'U'``            unicode
-   ``'V'``            anything (:class:`void`)
+   ``'m'``            timedelta
+   ``'M'``            datetime
+   ``'O'``            (Python) objects
+   ``'S'``, ``'a'``   (byte-)string
+   ``'U'``            Unicode
+   ``'V'``            raw data (:class:`void`)
    ================   ========================
 
    .. admonition:: Example
@@ -238,12 +247,12 @@ Array-protocol type strings (see :ref:`arrays.interface`)
 
 String with comma-separated fields
 
-   Numarray introduced a short-hand notation for specifying the format
-   of a record as a comma-separated string of basic formats.
+   A short-hand notation for specifying the format of a structured data type is
+   a comma-separated string of basic formats.
 
    A basic format in this context is an optional shape specifier
    followed by an array-protocol type string. Parenthesis are required
-   on the shape if it is greater than 1-d. NumPy allows a modification
+   on the shape if it has more than one dimension. NumPy allows a modification
    on the format in that any string that can uniquely identify the
    type can be used to specify the data-type in a field.
    The generated data-type fields are named ``'f0'``, ``'f1'``, ...,
@@ -283,8 +292,8 @@ Type strings
 ``(flexible_dtype, itemsize)``
 
     The first argument must be an object that is converted to a
-    flexible data-type object (one whose element size is 0), the
-    second argument is an integer providing the desired itemsize.
+    zero-sized flexible data-type object, the second argument is
+    an integer providing the desired itemsize.
 
     .. admonition:: Example
 
@@ -307,31 +316,7 @@ Type strings
 
        >>> dt = np.dtype((np.int32, (2,2)))          # 2 x 2 integer sub-array
        >>> dt = np.dtype(('S10', 1))                 # 10-character string
-       >>> dt = np.dtype(('i4, (2,3)f8, f4', (2,3))) # 2 x 3 record sub-array
-
-``(base_dtype, new_dtype)``
-
-    Both arguments must be convertible to data-type objects in this
-    case. The *base_dtype* is the data-type object that the new
-    data-type builds on. This is how you could assign named fields to
-    any built-in data-type object.
-
-    .. admonition:: Example
-
-       32-bit integer, whose first two bytes are interpreted as an integer
-       via field ``real``, and the following two bytes via field ``imag``.
-
-       >>> dt = np.dtype((np.int32,{'real':(np.int16, 0),'imag':(np.int16, 2)})
-
-       32-bit integer, which is interpreted as consisting of a sub-array
-       of shape ``(4,)`` containing 8-bit integers:
-
-       >>> dt = np.dtype((np.int32, (np.int8, 4)))
-
-       32-bit integer, containing fields ``r``, ``g``, ``b``, ``a`` that
-       interpret the 4 bytes in the integer as four unsigned integers:
-
-       >>> dt = np.dtype(('i4', [('r','u1'),('g','u1'),('b','u1'),('a','u1')]))
+       >>> dt = np.dtype(('i4, (2,3)f8, f4', (2,3))) # 2 x 3 structured sub-array
 
 .. index::
    triple: dtype; construction; from list
@@ -376,15 +361,15 @@ Type strings
 .. index::
    triple: dtype; construction; from dict
 
-``{'names': ..., 'formats': ..., 'offsets': ..., 'titles': ...}``
+``{'names': ..., 'formats': ..., 'offsets': ..., 'titles': ..., 'itemsize': ...}``
 
-    This style has two required and two optional keys.  The *names*
+    This style has two required and three optional keys.  The *names*
     and *formats* keys are required. Their respective values are
     equal-length lists with the field names and the field formats.
     The field names must be strings and the field formats can be any
     object accepted by :class:`dtype` constructor.
 
-    The optional keys in the dictionary are *offsets* and *titles* and
+    When the optional keys *offsets* and *titles* are provided,
     their values must each be lists of the same length as the *names*
     and *formats* lists. The *offsets* value is a list of byte offsets
     (integers) for each field, while the *titles* value is a list of
@@ -395,10 +380,15 @@ Type strings
     field tuple which will contain the title as an additional tuple
     member.
 
+    The *itemsize* key allows the total size of the dtype to be
+    set, and must be an integer large enough so all the fields
+    are within the dtype. If the dtype being constructed is aligned,
+    the *itemsize* must also be divisible by the struct alignment.
+
     .. admonition:: Example
 
        Data type with fields ``r``, ``g``, ``b``, ``a``, each being
-       a 8-bit unsigned integer:
+       an 8-bit unsigned integer:
 
        >>> dt = np.dtype({'names': ['r','g','b','a'],
        ...                'formats': [uint8, uint8, uint8, uint8]})
@@ -413,6 +403,11 @@ Type strings
 
 
 ``{'field1': ..., 'field2': ..., ...}``
+
+    This usage is discouraged, because it is ambiguous with the
+    other dict-based construction method. If you have a field
+    called 'names' and a field called 'formats' there will be
+    a conflict.
 
     This style allows passing in the :attr:`fields <dtype.fields>`
     attribute of a data-type object.
@@ -429,11 +424,42 @@ Type strings
        >>> dt = np.dtype({'col1': ('S10', 0), 'col2': (float32, 10),
            'col3': (int, 14)})
 
+``(base_dtype, new_dtype)``
+
+    In NumPy 1.7 and later, this form allows `base_dtype` to be interpreted as
+    a structured dtype. Arrays created with this dtype will have underlying
+    dtype `base_dtype` but will have fields and flags taken from `new_dtype`.
+    This is useful for creating custom structured dtypes, as done in
+    :ref:`record arrays <arrays.classes.rec>`.
+
+    This form also makes it possible to specify struct dtypes with overlapping
+    fields, functioning like the 'union' type in C. This usage is discouraged,
+    however, and the union mechanism is preferred.
+
+    Both arguments must be convertible to data-type objects with the same total
+    size.
+    .. admonition:: Example
+
+       32-bit integer, whose first two bytes are interpreted as an integer
+       via field ``real``, and the following two bytes via field ``imag``.
+
+       >>> dt = np.dtype((np.int32,{'real':(np.int16, 0),'imag':(np.int16, 2)})
+
+       32-bit integer, which is interpreted as consisting of a sub-array
+       of shape ``(4,)`` containing 8-bit integers:
+
+       >>> dt = np.dtype((np.int32, (np.int8, 4)))
+
+       32-bit integer, containing fields ``r``, ``g``, ``b``, ``a`` that
+       interpret the 4 bytes in the integer as four unsigned integers:
+
+       >>> dt = np.dtype(('i4', [('r','u1'),('g','u1'),('b','u1'),('a','u1')]))
+
 
 :class:`dtype`
 ==============
 
-Numpy data type descriptions are instances of the :class:`dtype` class.
+NumPy data type descriptions are instances of the :class:`dtype` class.
 
 Attributes
 ----------
@@ -464,7 +490,7 @@ Endianness of this data:
 
    dtype.byteorder
 
-Information about sub-data-types in a :term:`record`:
+Information about sub-data-types in a :term:`structured` data type:
 
 .. autosummary::
    :toctree: generated/

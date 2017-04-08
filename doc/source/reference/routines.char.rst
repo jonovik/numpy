@@ -63,7 +63,6 @@ String information
    :toctree: generated/
 
    count
-   len
    find
    index
    isalpha
@@ -85,4 +84,3 @@ Convenience class
    :toctree: generated/
 
    chararray
-

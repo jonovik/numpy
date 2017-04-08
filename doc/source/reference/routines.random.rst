@@ -15,6 +15,10 @@ Simple random data
    randint
    random_integers
    random_sample
+   random
+   ranf
+   sample
+   choice
    bytes
 
 Permutations
@@ -33,7 +37,7 @@ Distributions
    beta
    binomial
    chisquare
-   mtrand.dirichlet
+   dirichlet
    exponential
    f
    gamma
@@ -71,7 +75,7 @@ Random generator
 .. autosummary::
    :toctree: generated/
 
-   mtrand.RandomState
+   RandomState
    seed
    get_state
    set_state

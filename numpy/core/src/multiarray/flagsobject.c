@@ -4,22 +4,19 @@
 #include <Python.h>
 #include "structmember.h"
 
+#define NPY_NO_DEPRECATED_API NPY_API_VERSION
 #define _MULTIARRAYMODULE
-#define NPY_NO_PREFIX
 #include "numpy/arrayobject.h"
 #include "numpy/arrayscalars.h"
 
 #include "npy_config.h"
 
-#include "numpy/npy_3kcompat.h"
+#include "npy_pycompat.h"
 
 #include "common.h"
 
-static int
-_IsContiguous(PyArrayObject *ap);
-
-static int
-_IsFortranContiguous(PyArrayObject *ap);
+static void
+_UpdateContiguousFlags(PyArrayObject *ap);
 
 /*NUMPY_API
  *
@@ -30,11 +27,21 @@ PyArray_NewFlagsObject(PyObject *obj)
 {
     PyObject *flagobj;
     int flags;
+
     if (obj == NULL) {
-        flags = CONTIGUOUS | OWNDATA | FORTRAN | ALIGNED;
+        flags = NPY_ARRAY_C_CONTIGUOUS |
+                NPY_ARRAY_OWNDATA |
+                NPY_ARRAY_F_CONTIGUOUS |
+                NPY_ARRAY_ALIGNED;
     }
     else {
-        flags = PyArray_FLAGS(obj);
+        if (!PyArray_Check(obj)) {
+            PyErr_SetString(PyExc_ValueError,
+                    "Need a NumPy array to create a flags object");
+            return NULL;
+        }
+
+        flags = PyArray_FLAGS((PyArrayObject *)obj);
     }
     flagobj = PyArrayFlags_Type.tp_alloc(&PyArrayFlags_Type, 0);
     if (flagobj == NULL) {
@@ -52,47 +59,28 @@ PyArray_NewFlagsObject(PyObject *obj)
 NPY_NO_EXPORT void
 PyArray_UpdateFlags(PyArrayObject *ret, int flagmask)
 {
-
-    if (flagmask & FORTRAN) {
-        if (_IsFortranContiguous(ret)) {
-            ret->flags |= FORTRAN;
-            if (ret->nd > 1) {
-                ret->flags &= ~CONTIGUOUS;
-            }
-        }
-        else {
-            ret->flags &= ~FORTRAN;
-        }
+    /* Always update both, as its not trivial to guess one from the other */
+    if (flagmask & (NPY_ARRAY_F_CONTIGUOUS | NPY_ARRAY_C_CONTIGUOUS)) {
+        _UpdateContiguousFlags(ret);
     }
-    if (flagmask & CONTIGUOUS) {
-        if (_IsContiguous(ret)) {
-            ret->flags |= CONTIGUOUS;
-            if (ret->nd > 1) {
-                ret->flags &= ~FORTRAN;
-            }
-        }
-        else {
-            ret->flags &= ~CONTIGUOUS;
-        }
-    }
-    if (flagmask & ALIGNED) {
+    if (flagmask & NPY_ARRAY_ALIGNED) {
         if (_IsAligned(ret)) {
-            ret->flags |= ALIGNED;
+            PyArray_ENABLEFLAGS(ret, NPY_ARRAY_ALIGNED);
         }
         else {
-            ret->flags &= ~ALIGNED;
+            PyArray_CLEARFLAGS(ret, NPY_ARRAY_ALIGNED);
         }
     }
     /*
      * This is not checked by default WRITEABLE is not
      * part of UPDATE_ALL
      */
-    if (flagmask & WRITEABLE) {
+    if (flagmask & NPY_ARRAY_WRITEABLE) {
         if (_IsWriteable(ret)) {
-            ret->flags |= WRITEABLE;
+            PyArray_ENABLEFLAGS(ret, NPY_ARRAY_WRITEABLE);
         }
         else {
-            ret->flags &= ~WRITEABLE;
+            PyArray_CLEARFLAGS(ret, NPY_ARRAY_WRITEABLE);
         }
     }
     return;
@@ -100,66 +88,104 @@ PyArray_UpdateFlags(PyArrayObject *ret, int flagmask)
 
 /*
  * Check whether the given array is stored contiguously
- * (row-wise) in memory.
+ * in memory. And update the passed in ap flags apropriately.
  *
- * 0-strided arrays are not contiguous (even if dimension == 1)
+ * The traditional rule is that for an array to be flagged as C contiguous,
+ * the following must hold:
+ *
+ * strides[-1] == itemsize
+ * strides[i] == shape[i+1] * strides[i + 1]
+ *
+ * And for an array to be flagged as F contiguous, the obvious reversal:
+ *
+ * strides[0] == itemsize
+ * strides[i] == shape[i - 1] * strides[i - 1]
+ *
+ * According to these rules, a 0- or 1-dimensional array is either both
+ * C- and F-contiguous, or neither; and an array with 2+ dimensions
+ * can be C- or F- contiguous, or neither, but not both. Though there
+ * there are exceptions for arrays with zero or one item, in the first
+ * case the check is relaxed up to and including the first dimension
+ * with shape[i] == 0. In the second case `strides == itemsize` will
+ * can be true for all dimensions and both flags are set.
+ *
+ * When NPY_RELAXED_STRIDES_CHECKING is set, we use a more accurate
+ * definition of C- and F-contiguity, in which all 0-sized arrays are
+ * contiguous (regardless of dimensionality), and if shape[i] == 1
+ * then we ignore strides[i] (since it has no affect on memory layout).
+ * With these new rules, it is possible for e.g. a 10x1 array to be both
+ * C- and F-contiguous -- but, they break downstream code which assumes
+ * that for contiguous arrays strides[-1] (resp. strides[0]) always
+ * contains the itemsize.
  */
-static int
-_IsContiguous(PyArrayObject *ap)
+static void
+_UpdateContiguousFlags(PyArrayObject *ap)
 {
-    intp sd;
-    intp dim;
+    npy_intp sd;
+    npy_intp dim;
     int i;
+    npy_bool is_c_contig = 1;
 
-    if (ap->nd == 0) {
-        return 1;
-    }
-    sd = ap->descr->elsize;
-    if (ap->nd == 1) {
-        return ap->dimensions[0] == 1 || sd == ap->strides[0];
-    }
-    for (i = ap->nd - 1; i >= 0; --i) {
-        dim = ap->dimensions[i];
+    sd = PyArray_ITEMSIZE(ap);
+    for (i = PyArray_NDIM(ap) - 1; i >= 0; --i) {
+        dim = PyArray_DIMS(ap)[i];
+#if NPY_RELAXED_STRIDES_CHECKING
         /* contiguous by definition */
         if (dim == 0) {
-            return 1;
+            PyArray_ENABLEFLAGS(ap, NPY_ARRAY_C_CONTIGUOUS);
+            PyArray_ENABLEFLAGS(ap, NPY_ARRAY_F_CONTIGUOUS);
+            return;
         }
-        if (ap->strides[i] != sd) {
-            return 0;
+        if (dim != 1) {
+            if (PyArray_STRIDES(ap)[i] != sd) {
+                is_c_contig = 0;
+            }
+            sd *= dim;
         }
-        sd *= dim;
-    }
-    return 1;
-}
-
-
-/* 0-strided arrays are not contiguous (even if dimension == 1) */
-static int
-_IsFortranContiguous(PyArrayObject *ap)
-{
-    intp sd;
-    intp dim;
-    int i;
-
-    if (ap->nd == 0) {
-        return 1;
-    }
-    sd = ap->descr->elsize;
-    if (ap->nd == 1) {
-        return ap->dimensions[0] == 1 || sd == ap->strides[0];
-    }
-    for (i = 0; i < ap->nd; ++i) {
-        dim = ap->dimensions[i];
-        /* fortran contiguous by definition */
+#else /* not NPY_RELAXED_STRIDES_CHECKING */
+        if (PyArray_STRIDES(ap)[i] != sd) {
+            is_c_contig = 0;
+            break;
+         }
+        /* contiguous, if it got this far */
         if (dim == 0) {
-            return 1;
-        }
-        if (ap->strides[i] != sd) {
-            return 0;
+            break;
         }
         sd *= dim;
+#endif /* not NPY_RELAXED_STRIDES_CHECKING */
     }
-    return 1;
+    if (is_c_contig) {
+        PyArray_ENABLEFLAGS(ap, NPY_ARRAY_C_CONTIGUOUS);
+    }
+    else {
+        PyArray_CLEARFLAGS(ap, NPY_ARRAY_C_CONTIGUOUS);
+    }
+
+    /* check if fortran contiguous */
+    sd = PyArray_ITEMSIZE(ap);
+    for (i = 0; i < PyArray_NDIM(ap); ++i) {
+        dim = PyArray_DIMS(ap)[i];
+#if NPY_RELAXED_STRIDES_CHECKING
+        if (dim != 1) {
+            if (PyArray_STRIDES(ap)[i] != sd) {
+                PyArray_CLEARFLAGS(ap, NPY_ARRAY_F_CONTIGUOUS);
+                return;
+            }
+            sd *= dim;
+        }
+#else /* not NPY_RELAXED_STRIDES_CHECKING */
+        if (PyArray_STRIDES(ap)[i] != sd) {
+            PyArray_CLEARFLAGS(ap, NPY_ARRAY_F_CONTIGUOUS);
+            return;
+        }
+        if (dim == 0) {
+            break;
+        }
+        sd *= dim;
+#endif /* not NPY_RELAXED_STRIDES_CHECKING */
+    }
+    PyArray_ENABLEFLAGS(ap, NPY_ARRAY_F_CONTIGUOUS);
+    return;
 }
 
 static void
@@ -170,33 +196,36 @@ arrayflags_dealloc(PyArrayFlagsObject *self)
 }
 
 
-#define _define_get(UPPER, lower)                                       \
-    static PyObject *                                                   \
-    arrayflags_ ## lower ## _get(PyArrayFlagsObject *self)              \
-    {                                                                   \
-        PyObject *item;                                                 \
+#define _define_get(UPPER, lower) \
+    static PyObject * \
+    arrayflags_ ## lower ## _get(PyArrayFlagsObject *self) \
+    { \
+        PyObject *item; \
         item = ((self->flags & (UPPER)) == (UPPER)) ? Py_True : Py_False; \
-        Py_INCREF(item);                                                \
-        return item;                                                    \
+        Py_INCREF(item); \
+        return item; \
     }
 
-_define_get(CONTIGUOUS, contiguous)
-_define_get(FORTRAN, fortran)
-_define_get(UPDATEIFCOPY, updateifcopy)
-_define_get(OWNDATA, owndata)
-_define_get(ALIGNED, aligned)
-_define_get(WRITEABLE, writeable)
+_define_get(NPY_ARRAY_C_CONTIGUOUS, contiguous)
+_define_get(NPY_ARRAY_F_CONTIGUOUS, fortran)
+_define_get(NPY_ARRAY_UPDATEIFCOPY, updateifcopy)
+_define_get(NPY_ARRAY_OWNDATA, owndata)
+_define_get(NPY_ARRAY_ALIGNED, aligned)
+_define_get(NPY_ARRAY_WRITEABLE, writeable)
 
-_define_get(ALIGNED|WRITEABLE, behaved)
-_define_get(ALIGNED|WRITEABLE|CONTIGUOUS, carray)
+_define_get(NPY_ARRAY_ALIGNED|
+            NPY_ARRAY_WRITEABLE, behaved)
+_define_get(NPY_ARRAY_ALIGNED|
+            NPY_ARRAY_WRITEABLE|
+            NPY_ARRAY_C_CONTIGUOUS, carray)
 
 static PyObject *
 arrayflags_forc_get(PyArrayFlagsObject *self)
 {
     PyObject *item;
 
-    if (((self->flags & FORTRAN) == FORTRAN) ||
-        ((self->flags & CONTIGUOUS) == CONTIGUOUS)) {
+    if (((self->flags & NPY_ARRAY_F_CONTIGUOUS) == NPY_ARRAY_F_CONTIGUOUS) ||
+        ((self->flags & NPY_ARRAY_C_CONTIGUOUS) == NPY_ARRAY_C_CONTIGUOUS)) {
         item = Py_True;
     }
     else {
@@ -211,8 +240,8 @@ arrayflags_fnc_get(PyArrayFlagsObject *self)
 {
     PyObject *item;
 
-    if (((self->flags & FORTRAN) == FORTRAN) &&
-        !((self->flags & CONTIGUOUS) == CONTIGUOUS)) {
+    if (((self->flags & NPY_ARRAY_F_CONTIGUOUS) == NPY_ARRAY_F_CONTIGUOUS) &&
+        !((self->flags & NPY_ARRAY_C_CONTIGUOUS) == NPY_ARRAY_C_CONTIGUOUS)) {
         item = Py_True;
     }
     else {
@@ -227,9 +256,10 @@ arrayflags_farray_get(PyArrayFlagsObject *self)
 {
     PyObject *item;
 
-    if (((self->flags & (ALIGNED|WRITEABLE|FORTRAN)) ==
-         (ALIGNED|WRITEABLE|FORTRAN)) &&
-        !((self->flags & CONTIGUOUS) == CONTIGUOUS)) {
+    if (((self->flags & (NPY_ARRAY_ALIGNED|
+                         NPY_ARRAY_WRITEABLE|
+                         NPY_ARRAY_F_CONTIGUOUS)) != 0) &&
+        !((self->flags & NPY_ARRAY_C_CONTIGUOUS) != 0)) {
         item = Py_True;
     }
     else {
@@ -250,8 +280,15 @@ static int
 arrayflags_updateifcopy_set(PyArrayFlagsObject *self, PyObject *obj)
 {
     PyObject *res;
+
+    if (obj == NULL) {
+        PyErr_SetString(PyExc_AttributeError,
+                "Cannot delete flags updateifcopy attribute");
+        return -1;
+    }
     if (self->arr == NULL) {
-        PyErr_SetString(PyExc_ValueError, "Cannot set flags on array scalars.");
+        PyErr_SetString(PyExc_ValueError,
+                "Cannot set flags on array scalars.");
         return -1;
     }
     res = PyObject_CallMethod(self->arr, "setflags", "OOO", Py_None, Py_None,
@@ -267,8 +304,15 @@ static int
 arrayflags_aligned_set(PyArrayFlagsObject *self, PyObject *obj)
 {
     PyObject *res;
+
+    if (obj == NULL) {
+        PyErr_SetString(PyExc_AttributeError,
+                "Cannot delete flags aligned attribute");
+        return -1;
+    }
     if (self->arr == NULL) {
-        PyErr_SetString(PyExc_ValueError, "Cannot set flags on array scalars.");
+        PyErr_SetString(PyExc_ValueError,
+                "Cannot set flags on array scalars.");
         return -1;
     }
     res = PyObject_CallMethod(self->arr, "setflags", "OOO", Py_None,
@@ -285,8 +329,15 @@ static int
 arrayflags_writeable_set(PyArrayFlagsObject *self, PyObject *obj)
 {
     PyObject *res;
+
+    if (obj == NULL) {
+        PyErr_SetString(PyExc_AttributeError,
+                "Cannot delete flags writeable attribute");
+        return -1;
+    }
     if (self->arr == NULL) {
-        PyErr_SetString(PyExc_ValueError, "Cannot set flags on array scalars.");
+        PyErr_SetString(PyExc_ValueError,
+                "Cannot set flags on array scalars.");
         return -1;
     }
     res = PyObject_CallMethod(self->arr, "setflags", "OOO",
@@ -535,14 +586,16 @@ arrayflags_print(PyArrayFlagsObject *self)
 {
     int fl = self->flags;
 
-    return PyUString_FromFormat("  %s : %s\n  %s : %s\n  %s : %s\n"\
-                               "  %s : %s\n  %s : %s\n  %s : %s",
-                               "C_CONTIGUOUS", _torf_(fl, CONTIGUOUS),
-                               "F_CONTIGUOUS", _torf_(fl, FORTRAN),
-                               "OWNDATA", _torf_(fl, OWNDATA),
-                               "WRITEABLE", _torf_(fl, WRITEABLE),
-                               "ALIGNED", _torf_(fl, ALIGNED),
-                               "UPDATEIFCOPY", _torf_(fl, UPDATEIFCOPY));
+    return PyUString_FromFormat(
+                        "  %s : %s\n  %s : %s\n"
+                        "  %s : %s\n  %s : %s\n"
+                        "  %s : %s\n  %s : %s",
+                        "C_CONTIGUOUS", _torf_(fl, NPY_ARRAY_C_CONTIGUOUS),
+                        "F_CONTIGUOUS", _torf_(fl, NPY_ARRAY_F_CONTIGUOUS),
+                        "OWNDATA",      _torf_(fl, NPY_ARRAY_OWNDATA),
+                        "WRITEABLE",    _torf_(fl, NPY_ARRAY_WRITEABLE),
+                        "ALIGNED",      _torf_(fl, NPY_ARRAY_ALIGNED),
+                        "UPDATEIFCOPY", _torf_(fl, NPY_ARRAY_UPDATEIFCOPY));
 }
 
 
@@ -590,11 +643,7 @@ arrayflags_richcompare(PyObject *self, PyObject *other, int cmp_op)
 }
 
 static PyMappingMethods arrayflags_as_mapping = {
-#if PY_VERSION_HEX >= 0x02050000
     (lenfunc)NULL,                       /*mp_length*/
-#else
-    (inquiry)NULL,                       /*mp_length*/
-#endif
     (binaryfunc)arrayflags_getitem,      /*mp_subscript*/
     (objobjargproc)arrayflags_setitem,   /*mp_ass_subscript*/
 };
@@ -672,7 +721,5 @@ NPY_NO_EXPORT PyTypeObject PyArrayFlags_Type = {
     0,                                          /* tp_subclasses */
     0,                                          /* tp_weaklist */
     0,                                          /* tp_del */
-#if PY_VERSION_HEX >= 0x02060000
     0,                                          /* tp_version_tag */
-#endif
 };

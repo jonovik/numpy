@@ -1,5 +1,8 @@
 #ifndef __LOWLEVEL_STRIDED_LOOPS_H
 #define __LOWLEVEL_STRIDED_LOOPS_H
+#include "common.h"
+#include <npy_config.h>
+#include "mem_overlap.h"
 
 /*
  * NOTE: This API should remain private for the time being, to allow
@@ -8,39 +11,58 @@
  */
 
 /*
- * This function pointer is for functions that transfer an arbitrarily strided
- * input to a an arbitrarily strided output.  It may be a fully general
- * function, or a specialized function when the strides or item size
- * have special values.
+ * This function pointer is for unary operations that input an
+ * arbitrarily strided one-dimensional array segment and output
+ * an arbitrarily strided array segment of the same size.
+ * It may be a fully general function, or a specialized function
+ * when the strides or item size have particular known values.
  *
- * Examples of transfer functions are a straight copy, a byte-swap,
+ * Examples of unary operations are a straight copy, a byte-swap,
  * and a casting operation,
  *
- * The 'transferdata' parameter is slightly special, and must always contain
- * pointer to deallocation and copying routines at its beginning.  The function
- * PyArray_FreeStridedTransferData should be used to deallocate such
- * pointers, and calls the first function pointer, while the function
- * PyArray_CopyStridedTransferData should be used to copy it.
- * 
+ * The 'transferdata' parameter is slightly special, following a
+ * generic auxiliary data pattern defined in ndarraytypes.h
+ * Use NPY_AUXDATA_CLONE and NPY_AUXDATA_FREE to deal with this data.
+ *
  */
-typedef void (PyArray_StridedTransferFn)(char *dst, npy_intp dst_stride,
+typedef void (PyArray_StridedUnaryOp)(char *dst, npy_intp dst_stride,
                                     char *src, npy_intp src_stride,
                                     npy_intp N, npy_intp src_itemsize,
-                                    void *transferdata);
+                                    NpyAuxData *transferdata);
 
 /*
- * Deallocates a PyArray_StridedTransferFunction data object.  See
- * the comment with the function typedef for more details.
+ * This is for pointers to functions which behave exactly as
+ * for PyArray_StridedUnaryOp, but with an additional mask controlling
+ * which values are transformed.
+ *
+ * In particular, the 'i'-th element is operated on if and only if
+ * mask[i*mask_stride] is true.
  */
-NPY_NO_EXPORT void
-PyArray_FreeStridedTransferData(void *transferdata);
+typedef void (PyArray_MaskedStridedUnaryOp)(char *dst, npy_intp dst_stride,
+                                    char *src, npy_intp src_stride,
+                                    npy_bool *mask, npy_intp mask_stride,
+                                    npy_intp N, npy_intp src_itemsize,
+                                    NpyAuxData *transferdata);
 
 /*
- * Copies a PyArray_StridedTransferFunction data object.  See
- * the comment with the function typedef for more details.
+ * This function pointer is for binary operations that input two
+ * arbitrarily strided one-dimensional array segments and output
+ * an arbitrarily strided array segment of the same size.
+ * It may be a fully general function, or a specialized function
+ * when the strides or item size have particular known values.
+ *
+ * Examples of binary operations are the basic arithmetic operations,
+ * logical operators AND, OR, and many others.
+ *
+ * The 'transferdata' parameter is slightly special, following a
+ * generic auxiliary data pattern defined in ndarraytypes.h
+ * Use NPY_AUXDATA_CLONE and NPY_AUXDATA_FREE to deal with this data.
+ *
  */
-NPY_NO_EXPORT void *
-PyArray_CopyStridedTransferData(void *transferdata);
+typedef void (PyArray_StridedBinaryOp)(char *dst, npy_intp dst_stride,
+                                    char *src0, npy_intp src0_stride,
+                                    char *src1, npy_intp src1_stride,
+                                    npy_intp N, NpyAuxData *transferdata);
 
 /*
  * Gives back a function pointer to a specialized function for copying
@@ -49,19 +71,20 @@ PyArray_CopyStridedTransferData(void *transferdata);
  * aligned:
  *      Should be 1 if the src and dst pointers are always aligned,
  *      0 otherwise.
- * src_stride:  
+ * src_stride:
  *      Should be the src stride if it will always be the same,
  *      NPY_MAX_INTP otherwise.
- * dst_stride:  
+ * dst_stride:
  *      Should be the dst stride if it will always be the same,
  *      NPY_MAX_INTP otherwise.
  * itemsize:
  *      Should be the item size if it will always be the same, 0 otherwise.
  *
  */
-NPY_NO_EXPORT PyArray_StridedTransferFn *
-PyArray_GetStridedCopyFn(npy_intp aligned, npy_intp src_stride,
-                         npy_intp dst_stride, npy_intp itemsize);
+NPY_NO_EXPORT PyArray_StridedUnaryOp *
+PyArray_GetStridedCopyFn(int aligned,
+                        npy_intp src_stride, npy_intp dst_stride,
+                        npy_intp itemsize);
 
 /*
  * Gives back a function pointer to a specialized function for copying
@@ -73,9 +96,10 @@ PyArray_GetStridedCopyFn(npy_intp aligned, npy_intp src_stride,
  *
  * Parameters are as for PyArray_GetStridedCopyFn.
  */
-NPY_NO_EXPORT PyArray_StridedTransferFn *
-PyArray_GetStridedCopySwapFn(npy_intp aligned, npy_intp src_stride,
-                             npy_intp dst_stride, npy_intp itemsize);
+NPY_NO_EXPORT PyArray_StridedUnaryOp *
+PyArray_GetStridedCopySwapFn(int aligned,
+                            npy_intp src_stride, npy_intp dst_stride,
+                            npy_intp itemsize);
 
 /*
  * Gives back a function pointer to a specialized function for copying
@@ -87,9 +111,10 @@ PyArray_GetStridedCopySwapFn(npy_intp aligned, npy_intp src_stride,
  *
  * Parameters are as for PyArray_GetStridedCopyFn.
  */
-NPY_NO_EXPORT PyArray_StridedTransferFn *
-PyArray_GetStridedCopySwapPairFn(npy_intp aligned, npy_intp src_stride,
-                             npy_intp dst_stride, npy_intp itemsize);
+NPY_NO_EXPORT PyArray_StridedUnaryOp *
+PyArray_GetStridedCopySwapPairFn(int aligned,
+                            npy_intp src_stride, npy_intp dst_stride,
+                            npy_intp itemsize);
 
 /*
  * Gives back a transfer function and transfer data pair which copies
@@ -102,11 +127,11 @@ PyArray_GetStridedCopySwapPairFn(npy_intp aligned, npy_intp src_stride,
  * Returns NPY_SUCCEED or NPY_FAIL
  */
 NPY_NO_EXPORT int
-PyArray_GetStridedZeroPadCopyFn(int aligned,
+PyArray_GetStridedZeroPadCopyFn(int aligned, int unicode_swap,
                             npy_intp src_stride, npy_intp dst_stride,
                             npy_intp src_itemsize, npy_intp dst_itemsize,
-                            PyArray_StridedTransferFn **outstransfer,
-                            void **outtransferdata);
+                            PyArray_StridedUnaryOp **outstransfer,
+                            NpyAuxData **outtransferdata);
 
 /*
  * For casts between built-in numeric types,
@@ -114,25 +139,38 @@ PyArray_GetStridedZeroPadCopyFn(int aligned,
  * to dst_type_num.  If a conversion is unsupported, returns NULL
  * without setting a Python exception.
  */
-NPY_NO_EXPORT PyArray_StridedTransferFn *
-PyArray_GetStridedNumericCastFn(npy_intp aligned, npy_intp src_stride,
-                             npy_intp dst_stride,
-                             int src_type_num, int dst_type_num);
+NPY_NO_EXPORT PyArray_StridedUnaryOp *
+PyArray_GetStridedNumericCastFn(int aligned,
+                            npy_intp src_stride, npy_intp dst_stride,
+                            int src_type_num, int dst_type_num);
+
+/*
+ * Gets an operation which copies elements of the given dtype,
+ * swapping if the dtype isn't in NBO.
+ *
+ * Returns NPY_SUCCEED or NPY_FAIL
+ */
+NPY_NO_EXPORT int
+PyArray_GetDTypeCopySwapFn(int aligned,
+                            npy_intp src_stride, npy_intp dst_stride,
+                            PyArray_Descr *dtype,
+                            PyArray_StridedUnaryOp **outstransfer,
+                            NpyAuxData **outtransferdata);
 
 /*
  * If it's possible, gives back a transfer function which casts and/or
  * byte swaps data with the dtype 'src_dtype' into data with the dtype
  * 'dst_dtype'.  If the outtransferdata is populated with a non-NULL value,
- * it must be deallocated with the ``PyArray_FreeStridedTransferData``
+ * it must be deallocated with the NPY_AUXDATA_FREE
  * function when the transfer function is no longer required.
  *
  * aligned:
  *      Should be 1 if the src and dst pointers are always aligned,
  *      0 otherwise.
- * src_stride:  
+ * src_stride:
  *      Should be the src stride if it will always be the same,
  *      NPY_MAX_INTP otherwise.
- * dst_stride:  
+ * dst_stride:
  *      Should be the dst stride if it will always be the same,
  *      NPY_MAX_INTP otherwise.
  * src_dtype:
@@ -151,7 +189,7 @@ PyArray_GetStridedNumericCastFn(npy_intp aligned, npy_intp src_stride,
  * out_transferdata:
  *      The auxiliary data for the transfer function is placed here.
  *      When finished with the transfer function, the caller must call
- *      ``PyArray_FreeStridedTransferData`` on this data.
+ *      NPY_AUXDATA_FREE on this data.
  * out_needs_api:
  *      If this is non-NULL, and the transfer function produced needs
  *      to call into the (Python) API, this gets set to 1.  This
@@ -169,9 +207,51 @@ PyArray_GetDTypeTransferFunction(int aligned,
                             npy_intp src_stride, npy_intp dst_stride,
                             PyArray_Descr *src_dtype, PyArray_Descr *dst_dtype,
                             int move_references,
-                            PyArray_StridedTransferFn **out_stransfer,
-                            void **out_transferdata,
+                            PyArray_StridedUnaryOp **out_stransfer,
+                            NpyAuxData **out_transferdata,
                             int *out_needs_api);
+
+/*
+ * This is identical to PyArray_GetDTypeTransferFunction, but returns a
+ * transfer function which also takes a mask as a parameter.  The mask is used
+ * to determine which values to copy, and data is transfered exactly when
+ * mask[i*mask_stride] is true.
+ *
+ * If move_references is true, values which are not copied to the
+ * destination will still have their source reference decremented.
+ *
+ * If mask_dtype is NPY_BOOL or NPY_UINT8, each full element is either
+ * transferred or not according to the mask as described above. If
+ * dst_dtype and mask_dtype are both struct dtypes, their names must
+ * match exactly, and the dtype of each leaf field in mask_dtype must
+ * be either NPY_BOOL or NPY_UINT8.
+ */
+NPY_NO_EXPORT int
+PyArray_GetMaskedDTypeTransferFunction(int aligned,
+                            npy_intp src_stride,
+                            npy_intp dst_stride,
+                            npy_intp mask_stride,
+                            PyArray_Descr *src_dtype,
+                            PyArray_Descr *dst_dtype,
+                            PyArray_Descr *mask_dtype,
+                            int move_references,
+                            PyArray_MaskedStridedUnaryOp **out_stransfer,
+                            NpyAuxData **out_transferdata,
+                            int *out_needs_api);
+
+/*
+ * Casts the specified number of elements from 'src' with data type
+ * 'src_dtype' to 'dst' with 'dst_dtype'. See
+ * PyArray_GetDTypeTransferFunction for more details.
+ *
+ * Returns NPY_SUCCEED or NPY_FAIL.
+ */
+NPY_NO_EXPORT int
+PyArray_CastRawArrays(npy_intp count,
+                      char *src, char *dst,
+                      npy_intp src_stride, npy_intp dst_stride,
+                      PyArray_Descr *src_dtype, PyArray_Descr *dst_dtype,
+                      int move_references);
 
 /*
  * These two functions copy or convert the data of an n-dimensional array
@@ -179,6 +259,7 @@ PyArray_GetDTypeTransferFunction(int aligned,
  * 'stransfer' with the provided dst_stride/src_stride and
  * dst_strides[0]/src_strides[0], so the caller can use those values to
  * specialize the function.
+ * Note that even if ndim == 0, everything needs to be set as if ndim == 1.
  *
  * The return value is the number of elements it couldn't copy.  A return value
  * of 0 means all elements were copied, a larger value means the end of
@@ -186,9 +267,9 @@ PyArray_GetDTypeTransferFunction(int aligned,
  *
  * ndim:
  *      The number of dimensions of the n-dimensional array.
- * dst/src:
- *      The destination or src starting pointer.
- * dst_stride/src_stride:
+ * dst/src/mask:
+ *      The destination, source or mask starting pointer.
+ * dst_stride/src_stride/mask_stride:
  *      The stride of the 1-dimensional strided buffer
  * dst_strides/src_strides:
  *      The strides of the n-dimensional array.
@@ -213,8 +294,7 @@ PyArray_GetDTypeTransferFunction(int aligned,
  *      The strided transfer function.
  * transferdata:
  *      An auxiliary data pointer passed to the strided transfer function.
- *      If a non-NULL value is returned, it must be deallocated with the
- *      function PyArray_FreeStridedTransferData.
+ *      This follows the conventions of NpyAuxData objects.
  */
 NPY_NO_EXPORT npy_intp
 PyArray_TransferNDimToStrided(npy_intp ndim,
@@ -223,8 +303,8 @@ PyArray_TransferNDimToStrided(npy_intp ndim,
                 npy_intp *coords, npy_intp coords_inc,
                 npy_intp *shape, npy_intp shape_inc,
                 npy_intp count, npy_intp src_itemsize,
-                PyArray_StridedTransferFn *stransfer,
-                void *transferdata);
+                PyArray_StridedUnaryOp *stransfer,
+                NpyAuxData *transferdata);
 
 NPY_NO_EXPORT npy_intp
 PyArray_TransferStridedToNDim(npy_intp ndim,
@@ -233,8 +313,300 @@ PyArray_TransferStridedToNDim(npy_intp ndim,
                 npy_intp *coords, npy_intp coords_inc,
                 npy_intp *shape, npy_intp shape_inc,
                 npy_intp count, npy_intp src_itemsize,
-                PyArray_StridedTransferFn *stransfer,
-                void *transferdata);
+                PyArray_StridedUnaryOp *stransfer,
+                NpyAuxData *transferdata);
+
+NPY_NO_EXPORT npy_intp
+PyArray_TransferMaskedStridedToNDim(npy_intp ndim,
+                char *dst, npy_intp *dst_strides, npy_intp dst_strides_inc,
+                char *src, npy_intp src_stride,
+                npy_bool *mask, npy_intp mask_stride,
+                npy_intp *coords, npy_intp coords_inc,
+                npy_intp *shape, npy_intp shape_inc,
+                npy_intp count, npy_intp src_itemsize,
+                PyArray_MaskedStridedUnaryOp *stransfer,
+                NpyAuxData *data);
+
+NPY_NO_EXPORT int
+mapiter_trivial_get(PyArrayObject *self, PyArrayObject *ind,
+                       PyArrayObject *result);
+
+NPY_NO_EXPORT int
+mapiter_trivial_set(PyArrayObject *self, PyArrayObject *ind,
+                       PyArrayObject *result);
+
+NPY_NO_EXPORT int
+mapiter_get(PyArrayMapIterObject *mit);
+
+NPY_NO_EXPORT int
+mapiter_set(PyArrayMapIterObject *mit);
+
+/*
+ * Prepares shape and strides for a simple raw array iteration.
+ * This sorts the strides into FORTRAN order, reverses any negative
+ * strides, then coalesces axes where possible. The results are
+ * filled in the output parameters.
+ *
+ * This is intended for simple, lightweight iteration over arrays
+ * where no buffering of any kind is needed, and the array may
+ * not be stored as a PyArrayObject.
+ *
+ * You can use this together with NPY_RAW_ITER_START and
+ * NPY_RAW_ITER_ONE_NEXT to handle the looping boilerplate of everything
+ * but the innermost loop (which is for idim == 0).
+ *
+ * Returns 0 on success, -1 on failure.
+ */
+NPY_NO_EXPORT int
+PyArray_PrepareOneRawArrayIter(int ndim, npy_intp *shape,
+                            char *data, npy_intp *strides,
+                            int *out_ndim, npy_intp *out_shape,
+                            char **out_data, npy_intp *out_strides);
+
+/*
+ * The same as PyArray_PrepareOneRawArrayIter, but for two
+ * operands instead of one. Any broadcasting of the two operands
+ * should have already been done before calling this function,
+ * as the ndim and shape is only specified once for both operands.
+ *
+ * Only the strides of the first operand are used to reorder
+ * the dimensions, no attempt to consider all the strides together
+ * is made, as is done in the NpyIter object.
+ *
+ * You can use this together with NPY_RAW_ITER_START and
+ * NPY_RAW_ITER_TWO_NEXT to handle the looping boilerplate of everything
+ * but the innermost loop (which is for idim == 0).
+ *
+ * Returns 0 on success, -1 on failure.
+ */
+NPY_NO_EXPORT int
+PyArray_PrepareTwoRawArrayIter(int ndim, npy_intp *shape,
+                            char *dataA, npy_intp *stridesA,
+                            char *dataB, npy_intp *stridesB,
+                            int *out_ndim, npy_intp *out_shape,
+                            char **out_dataA, npy_intp *out_stridesA,
+                            char **out_dataB, npy_intp *out_stridesB);
+
+/*
+ * The same as PyArray_PrepareOneRawArrayIter, but for three
+ * operands instead of one. Any broadcasting of the three operands
+ * should have already been done before calling this function,
+ * as the ndim and shape is only specified once for all operands.
+ *
+ * Only the strides of the first operand are used to reorder
+ * the dimensions, no attempt to consider all the strides together
+ * is made, as is done in the NpyIter object.
+ *
+ * You can use this together with NPY_RAW_ITER_START and
+ * NPY_RAW_ITER_THREE_NEXT to handle the looping boilerplate of everything
+ * but the innermost loop (which is for idim == 0).
+ *
+ * Returns 0 on success, -1 on failure.
+ */
+NPY_NO_EXPORT int
+PyArray_PrepareThreeRawArrayIter(int ndim, npy_intp *shape,
+                            char *dataA, npy_intp *stridesA,
+                            char *dataB, npy_intp *stridesB,
+                            char *dataC, npy_intp *stridesC,
+                            int *out_ndim, npy_intp *out_shape,
+                            char **out_dataA, npy_intp *out_stridesA,
+                            char **out_dataB, npy_intp *out_stridesB,
+                            char **out_dataC, npy_intp *out_stridesC);
+
+/*
+ * Return number of elements that must be peeled from
+ * the start of 'addr' with 'nvals' elements of size 'esize'
+ * in order to reach 'alignment'.
+ * alignment must be a power of two.
+ * see npy_blocked_end for an example
+ */
+static NPY_INLINE npy_uintp
+npy_aligned_block_offset(const void * addr, const npy_uintp esize,
+                         const npy_uintp alignment, const npy_uintp nvals)
+{
+    const npy_uintp offset = (npy_uintp)addr & (alignment - 1);
+    npy_uintp peel = offset ? (alignment - offset) / esize : 0;
+    peel = nvals < peel ? nvals : peel;
+    return peel;
+}
+
+/*
+ * Return upper loop bound for an array of 'nvals' elements
+ * of size 'esize' peeled by 'offset' elements and blocking to
+ * a vector size of 'vsz' in bytes
+ *
+ * example usage:
+ * npy_intp i;
+ * double v[101];
+ * npy_intp esize = sizeof(v[0]);
+ * npy_intp peel = npy_aligned_block_offset(v, esize, 16, n);
+ * // peel to alignment 16
+ * for (i = 0; i < peel; i++)
+ *   <scalar-op>
+ * // simd vectorized operation
+ * for (; i < npy_blocked_end(peel, esize, 16, n); i += 16 / esize)
+ *   <blocked-op>
+ * // handle scalar rest
+ * for(; i < n; i++)
+ *   <scalar-op>
+ */
+static NPY_INLINE npy_uintp
+npy_blocked_end(const npy_uintp offset, const npy_uintp esize,
+                const npy_uintp vsz, const npy_uintp nvals)
+{
+    return nvals - offset - (nvals - offset) % (vsz / esize);
+}
+
+
+/* byte swapping functions */
+static NPY_INLINE npy_uint16
+npy_bswap2(npy_uint16 x)
+{
+    return ((x & 0xffu) << 8) | (x >> 8);
+}
+
+/*
+ * treat as int16 and byteswap unaligned memory,
+ * some cpus don't support unaligned access
+ */
+static NPY_INLINE void
+npy_bswap2_unaligned(char * x)
+{
+    char a = x[0];
+    x[0] = x[1];
+    x[1] = a;
+}
+
+static NPY_INLINE npy_uint32
+npy_bswap4(npy_uint32 x)
+{
+#ifdef HAVE___BUILTIN_BSWAP32
+    return __builtin_bswap32(x);
+#else
+    return ((x & 0xffu) << 24) | ((x & 0xff00u) << 8) |
+           ((x & 0xff0000u) >> 8) | (x >> 24);
+#endif
+}
+
+static NPY_INLINE void
+npy_bswap4_unaligned(char * x)
+{
+    char a = x[0];
+    x[0] = x[3];
+    x[3] = a;
+    a = x[1];
+    x[1] = x[2];
+    x[2] = a;
+}
+
+static NPY_INLINE npy_uint64
+npy_bswap8(npy_uint64 x)
+{
+#ifdef HAVE___BUILTIN_BSWAP64
+    return __builtin_bswap64(x);
+#else
+    return ((x & 0xffULL) << 56) |
+           ((x & 0xff00ULL) << 40) |
+           ((x & 0xff0000ULL) << 24) |
+           ((x & 0xff000000ULL) << 8) |
+           ((x & 0xff00000000ULL) >> 8) |
+           ((x & 0xff0000000000ULL) >> 24) |
+           ((x & 0xff000000000000ULL) >> 40) |
+           ( x >> 56);
+#endif
+}
+
+static NPY_INLINE void
+npy_bswap8_unaligned(char * x)
+{
+    char a = x[0]; x[0] = x[7]; x[7] = a;
+    a = x[1]; x[1] = x[6]; x[6] = a;
+    a = x[2]; x[2] = x[5]; x[5] = a;
+    a = x[3]; x[3] = x[4]; x[4] = a;
+}
+
+
+/* Start raw iteration */
+#define NPY_RAW_ITER_START(idim, ndim, coord, shape) \
+        memset((coord), 0, (ndim) * sizeof(coord[0])); \
+        do {
+
+/* Increment to the next n-dimensional coordinate for one raw array */
+#define NPY_RAW_ITER_ONE_NEXT(idim, ndim, coord, shape, data, strides) \
+            for ((idim) = 1; (idim) < (ndim); ++(idim)) { \
+                if (++(coord)[idim] == (shape)[idim]) { \
+                    (coord)[idim] = 0; \
+                    (data) -= ((shape)[idim] - 1) * (strides)[idim]; \
+                } \
+                else { \
+                    (data) += (strides)[idim]; \
+                    break; \
+                } \
+            } \
+        } while ((idim) < (ndim))
+
+/* Increment to the next n-dimensional coordinate for two raw arrays */
+#define NPY_RAW_ITER_TWO_NEXT(idim, ndim, coord, shape, \
+                              dataA, stridesA, dataB, stridesB) \
+            for ((idim) = 1; (idim) < (ndim); ++(idim)) { \
+                if (++(coord)[idim] == (shape)[idim]) { \
+                    (coord)[idim] = 0; \
+                    (dataA) -= ((shape)[idim] - 1) * (stridesA)[idim]; \
+                    (dataB) -= ((shape)[idim] - 1) * (stridesB)[idim]; \
+                } \
+                else { \
+                    (dataA) += (stridesA)[idim]; \
+                    (dataB) += (stridesB)[idim]; \
+                    break; \
+                } \
+            } \
+        } while ((idim) < (ndim))
+
+/* Increment to the next n-dimensional coordinate for three raw arrays */
+#define NPY_RAW_ITER_THREE_NEXT(idim, ndim, coord, shape, \
+                              dataA, stridesA, \
+                              dataB, stridesB, \
+                              dataC, stridesC) \
+            for ((idim) = 1; (idim) < (ndim); ++(idim)) { \
+                if (++(coord)[idim] == (shape)[idim]) { \
+                    (coord)[idim] = 0; \
+                    (dataA) -= ((shape)[idim] - 1) * (stridesA)[idim]; \
+                    (dataB) -= ((shape)[idim] - 1) * (stridesB)[idim]; \
+                    (dataC) -= ((shape)[idim] - 1) * (stridesC)[idim]; \
+                } \
+                else { \
+                    (dataA) += (stridesA)[idim]; \
+                    (dataB) += (stridesB)[idim]; \
+                    (dataC) += (stridesC)[idim]; \
+                    break; \
+                } \
+            } \
+        } while ((idim) < (ndim))
+
+/* Increment to the next n-dimensional coordinate for four raw arrays */
+#define NPY_RAW_ITER_FOUR_NEXT(idim, ndim, coord, shape, \
+                              dataA, stridesA, \
+                              dataB, stridesB, \
+                              dataC, stridesC, \
+                              dataD, stridesD) \
+            for ((idim) = 1; (idim) < (ndim); ++(idim)) { \
+                if (++(coord)[idim] == (shape)[idim]) { \
+                    (coord)[idim] = 0; \
+                    (dataA) -= ((shape)[idim] - 1) * (stridesA)[idim]; \
+                    (dataB) -= ((shape)[idim] - 1) * (stridesB)[idim]; \
+                    (dataC) -= ((shape)[idim] - 1) * (stridesC)[idim]; \
+                    (dataD) -= ((shape)[idim] - 1) * (stridesD)[idim]; \
+                } \
+                else { \
+                    (dataA) += (stridesA)[idim]; \
+                    (dataB) += (stridesB)[idim]; \
+                    (dataC) += (stridesC)[idim]; \
+                    (dataD) += (stridesD)[idim]; \
+                    break; \
+                } \
+            } \
+        } while ((idim) < (ndim))
+
 
 /*
  *            TRIVIAL ITERATION
@@ -291,38 +663,119 @@ PyArray_TransferStridedToNDim(npy_intp ndim,
  * Note: Equivalently iterable macro requires one of arr1 or arr2 be
  *       trivially iterable to be valid.
  */
-#define PyArray_EQUIVALENTLY_ITERABLE(arr1, arr2) ( \
+
+/**
+ * Determine whether two arrays are safe for trivial iteration in cases where
+ * some of the arrays may be modified.
+ *
+ * In-place iteration is safe if one of the following is true:
+ *
+ * - Both arrays are read-only
+ * - The arrays do not have overlapping memory (based on a check that may be too
+ *   strict)
+ * - The strides match, and the non-read-only array base addresses are equal or
+ *   before the read-only one, ensuring correct data dependency.
+ */
+
+#define PyArray_TRIVIALLY_ITERABLE_OP_NOREAD 0
+#define PyArray_TRIVIALLY_ITERABLE_OP_READ 1
+
+#define PyArray_EQUIVALENTLY_ITERABLE_BASE(arr1, arr2) (            \
                         PyArray_NDIM(arr1) == PyArray_NDIM(arr2) && \
                         PyArray_CompareLists(PyArray_DIMS(arr1), \
                                              PyArray_DIMS(arr2), \
                                              PyArray_NDIM(arr1)) && \
-                        (arr1->flags&(NPY_CONTIGUOUS|NPY_FORTRAN)) == \
-                                (arr2->flags&(NPY_CONTIGUOUS|NPY_FORTRAN)) \
+                        (PyArray_FLAGS(arr1)&(NPY_ARRAY_C_CONTIGUOUS| \
+                                      NPY_ARRAY_F_CONTIGUOUS)) & \
+                                (PyArray_FLAGS(arr2)&(NPY_ARRAY_C_CONTIGUOUS| \
+                                              NPY_ARRAY_F_CONTIGUOUS)) \
                         )
 
+#define PyArray_TRIVIAL_PAIR_ITERATION_STRIDE(size, arr) ( \
+                        size == 1 ? 0 : ((PyArray_NDIM(arr) == 1) ? \
+                                          PyArray_STRIDE(arr, 0) : \
+                                          PyArray_ITEMSIZE(arr)))
+
+static NPY_INLINE int
+PyArray_EQUIVALENTLY_ITERABLE_OVERLAP_OK(PyArrayObject *arr1, PyArrayObject *arr2,
+                                         int arr1_read, int arr2_read)
+{
+    npy_intp size1, size2, stride1, stride2;
+    int arr1_ahead = 0, arr2_ahead = 0;
+
+    if (arr1_read && arr2_read) {
+        return 1;
+    }
+
+    if (solve_may_share_memory(arr1, arr2, 1) == 0) {
+        return 1;
+    }
+
+    /*
+     * Arrays overlapping in memory may be equivalently iterable if input
+     * arrays stride ahead faster than output arrays.
+     */
+
+    size1 = PyArray_SIZE(arr1);
+    size2 = PyArray_SIZE(arr2);
+
+    stride1 = PyArray_TRIVIAL_PAIR_ITERATION_STRIDE(size1, arr1);
+    stride2 = PyArray_TRIVIAL_PAIR_ITERATION_STRIDE(size2, arr2);
+
+    /*
+     * Arrays with zero stride are never "ahead" since the element is reused
+     * (at this point we know the array extents overlap).
+     */
+
+    if (stride1 > 0) {
+        arr1_ahead = (stride1 >= stride2 &&
+                      PyArray_BYTES(arr1) >= PyArray_BYTES(arr2));
+    }
+    else if (stride1 < 0) {
+        arr1_ahead = (stride1 <= stride2 &&
+                      PyArray_BYTES(arr1) <= PyArray_BYTES(arr2));
+    }
+
+    if (stride2 > 0) {
+        arr2_ahead = (stride2 >= stride1 &&
+                      PyArray_BYTES(arr2) >= PyArray_BYTES(arr1));
+    }
+    else if (stride2 < 0) {
+        arr2_ahead = (stride2 <= stride1 &&
+                      PyArray_BYTES(arr2) <= PyArray_BYTES(arr1));
+    }
+
+    return (!arr1_read || arr1_ahead) && (!arr2_read || arr2_ahead);
+}
+
+#define PyArray_EQUIVALENTLY_ITERABLE(arr1, arr2, arr1_read, arr2_read) ( \
+                        PyArray_EQUIVALENTLY_ITERABLE_BASE(arr1, arr2) && \
+                        PyArray_EQUIVALENTLY_ITERABLE_OVERLAP_OK( \
+                            arr1, arr2, arr1_read, arr2_read))
 #define PyArray_TRIVIALLY_ITERABLE(arr) ( \
                     PyArray_NDIM(arr) <= 1 || \
-                    PyArray_CHKFLAGS(arr, NPY_CONTIGUOUS) || \
-                    PyArray_CHKFLAGS(arr, NPY_FORTRAN) \
+                    PyArray_CHKFLAGS(arr, NPY_ARRAY_C_CONTIGUOUS) || \
+                    PyArray_CHKFLAGS(arr, NPY_ARRAY_F_CONTIGUOUS) \
                     )
 #define PyArray_PREPARE_TRIVIAL_ITERATION(arr, count, data, stride) \
-                    count = PyArray_SIZE(arr), \
-                    data = PyArray_BYTES(arr), \
+                    count = PyArray_SIZE(arr); \
+                    data = PyArray_BYTES(arr); \
                     stride = ((PyArray_NDIM(arr) == 0) ? 0 : \
-                                (PyArray_CHKFLAGS(arr, NPY_FORTRAN) ? \
+                                    ((PyArray_NDIM(arr) == 1) ? \
                                             PyArray_STRIDE(arr, 0) : \
-                                            PyArray_STRIDE(arr, \
-                                                PyArray_NDIM(arr)-1)))
+                                            PyArray_ITEMSIZE(arr)));
 
-#define PyArray_TRIVIALLY_ITERABLE_PAIR(arr1, arr2) (\
+
+#define PyArray_TRIVIALLY_ITERABLE_PAIR(arr1, arr2, arr1_read, arr2_read) (   \
                     PyArray_TRIVIALLY_ITERABLE(arr1) && \
                         (PyArray_NDIM(arr2) == 0 || \
-                         PyArray_EQUIVALENTLY_ITERABLE(arr1, arr2) || \
+                         PyArray_EQUIVALENTLY_ITERABLE_BASE(arr1, arr2) ||  \
                          (PyArray_NDIM(arr1) == 0 && \
                              PyArray_TRIVIALLY_ITERABLE(arr2) \
                          ) \
-                        ) \
-                    )
+                        ) && \
+                        PyArray_EQUIVALENTLY_ITERABLE_OVERLAP_OK(arr1, arr2, arr1_read, arr2_read) \
+                        )
 #define PyArray_PREPARE_TRIVIAL_PAIR_ITERATION(arr1, arr2, \
                                         count, \
                                         data1, data2, \
@@ -332,37 +785,32 @@ PyArray_TransferStridedToNDim(npy_intp ndim,
                     count = ((size1 > size2) || size1 == 0) ? size1 : size2; \
                     data1 = PyArray_BYTES(arr1); \
                     data2 = PyArray_BYTES(arr2); \
-                    stride1 = (size1 == 1 ? 0 : \
-                                (PyArray_CHKFLAGS(arr1, NPY_FORTRAN) ? \
-                                            PyArray_STRIDE(arr1, 0) : \
-                                            PyArray_STRIDE(arr1, \
-                                                PyArray_NDIM(arr1)-1))); \
-                    stride2 = (size2 == 1 ? 0 : \
-                                (PyArray_CHKFLAGS(arr2, NPY_FORTRAN) ? \
-                                            PyArray_STRIDE(arr2, 0) : \
-                                            PyArray_STRIDE(arr2, \
-                                                PyArray_NDIM(arr2)-1))); \
+                    stride1 = PyArray_TRIVIAL_PAIR_ITERATION_STRIDE(size1, arr1); \
+                    stride2 = PyArray_TRIVIAL_PAIR_ITERATION_STRIDE(size2, arr2); \
                 }
 
-#define PyArray_TRIVIALLY_ITERABLE_TRIPLE(arr1, arr2, arr3) (\
+#define PyArray_TRIVIALLY_ITERABLE_TRIPLE(arr1, arr2, arr3, arr1_read, arr2_read, arr3_read) ( \
                 PyArray_TRIVIALLY_ITERABLE(arr1) && \
                     ((PyArray_NDIM(arr2) == 0 && \
                         (PyArray_NDIM(arr3) == 0 || \
-                            PyArray_EQUIVALENTLY_ITERABLE(arr1, arr3) \
+                            PyArray_EQUIVALENTLY_ITERABLE_BASE(arr1, arr3) \
                         ) \
                      ) || \
-                     (PyArray_EQUIVALENTLY_ITERABLE(arr1, arr2) && \
+                     (PyArray_EQUIVALENTLY_ITERABLE_BASE(arr1, arr2) && \
                         (PyArray_NDIM(arr3) == 0 || \
-                            PyArray_EQUIVALENTLY_ITERABLE(arr1, arr3) \
+                            PyArray_EQUIVALENTLY_ITERABLE_BASE(arr1, arr3) \
                         ) \
                      ) || \
                      (PyArray_NDIM(arr1) == 0 && \
                         PyArray_TRIVIALLY_ITERABLE(arr2) && \
                             (PyArray_NDIM(arr3) == 0 || \
-                                PyArray_EQUIVALENTLY_ITERABLE(arr2, arr3) \
+                                PyArray_EQUIVALENTLY_ITERABLE_BASE(arr2, arr3) \
                             ) \
                      ) \
-                    ) \
+                    ) && \
+                    PyArray_EQUIVALENTLY_ITERABLE_OVERLAP_OK(arr1, arr2, arr1_read, arr2_read) && \
+                    PyArray_EQUIVALENTLY_ITERABLE_OVERLAP_OK(arr1, arr3, arr1_read, arr3_read) && \
+                    PyArray_EQUIVALENTLY_ITERABLE_OVERLAP_OK(arr2, arr3, arr2_read, arr3_read) \
                 )
 
 #define PyArray_PREPARE_TRIVIAL_TRIPLE_ITERATION(arr1, arr2, arr3, \
@@ -377,21 +825,9 @@ PyArray_TransferStridedToNDim(npy_intp ndim,
                     data1 = PyArray_BYTES(arr1); \
                     data2 = PyArray_BYTES(arr2); \
                     data3 = PyArray_BYTES(arr3); \
-                    stride1 = (size1 == 1 ? 0 : \
-                                (PyArray_CHKFLAGS(arr1, NPY_FORTRAN) ? \
-                                            PyArray_STRIDE(arr1, 0) : \
-                                            PyArray_STRIDE(arr1, \
-                                                PyArray_NDIM(arr1)-1))); \
-                    stride2 = (size2 == 1 ? 0 : \
-                                (PyArray_CHKFLAGS(arr2, NPY_FORTRAN) ? \
-                                            PyArray_STRIDE(arr2, 0) : \
-                                            PyArray_STRIDE(arr2, \
-                                                PyArray_NDIM(arr2)-1))); \
-                    stride3 = (size3 == 1 ? 0 : \
-                                (PyArray_CHKFLAGS(arr3, NPY_FORTRAN) ? \
-                                            PyArray_STRIDE(arr3, 0) : \
-                                            PyArray_STRIDE(arr3, \
-                                                PyArray_NDIM(arr3)-1))); \
+                    stride1 = PyArray_TRIVIAL_PAIR_ITERATION_STRIDE(size1, arr1); \
+                    stride2 = PyArray_TRIVIAL_PAIR_ITERATION_STRIDE(size2, arr2); \
+                    stride3 = PyArray_TRIVIAL_PAIR_ITERATION_STRIDE(size3, arr3); \
                 }
 
 #endif

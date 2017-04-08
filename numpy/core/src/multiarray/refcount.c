@@ -1,5 +1,5 @@
 /*
- * This module corresponds to the `Special functions for PyArray_OBJECT`
+ * This module corresponds to the `Special functions for NPY_OBJECT`
  * section in the numpy reference for C-API.
  */
 
@@ -7,14 +7,14 @@
 #include <Python.h>
 #include "structmember.h"
 
+#define NPY_NO_DEPRECATED_API NPY_API_VERSION
 #define _MULTIARRAYMODULE
-#define NPY_NO_PREFIX
 #include "numpy/arrayobject.h"
 #include "numpy/arrayscalars.h"
 
 #include "npy_config.h"
 
-#include "numpy/npy_3kcompat.h"
+#include "npy_pycompat.h"
 
 static void
 _fillobject(char *optr, PyObject *obj, PyArray_Descr *dtype);
@@ -30,11 +30,11 @@ PyArray_Item_INCREF(char *data, PyArray_Descr *descr)
     if (!PyDataType_REFCHK(descr)) {
         return;
     }
-    if (descr->type_num == PyArray_OBJECT) {
+    if (descr->type_num == NPY_OBJECT) {
         NPY_COPY_PYOBJECT_PTR(&temp, data);
         Py_XINCREF(temp);
     }
-    else if (PyDescr_HASFIELDS(descr)) {
+    else if (PyDataType_HASFIELDS(descr)) {
         PyObject *key, *value, *title = NULL;
         PyArray_Descr *new;
         int offset;
@@ -66,11 +66,11 @@ PyArray_Item_XDECREF(char *data, PyArray_Descr *descr)
         return;
     }
 
-    if (descr->type_num == PyArray_OBJECT) {
+    if (descr->type_num == NPY_OBJECT) {
         NPY_COPY_PYOBJECT_PTR(&temp, data);
         Py_XDECREF(temp);
     }
-    else if PyDescr_HASFIELDS(descr) {
+    else if (PyDataType_HASFIELDS(descr)) {
             PyObject *key, *value, *title = NULL;
             PyArray_Descr *new;
             int offset;
@@ -98,21 +98,21 @@ PyArray_Item_XDECREF(char *data, PyArray_Descr *descr)
 NPY_NO_EXPORT int
 PyArray_INCREF(PyArrayObject *mp)
 {
-    intp i, n;
+    npy_intp i, n;
     PyObject **data;
     PyObject *temp;
     PyArrayIterObject *it;
 
-    if (!PyDataType_REFCHK(mp->descr)) {
+    if (!PyDataType_REFCHK(PyArray_DESCR(mp))) {
         return 0;
     }
-    if (mp->descr->type_num != PyArray_OBJECT) {
+    if (PyArray_DESCR(mp)->type_num != NPY_OBJECT) {
         it = (PyArrayIterObject *)PyArray_IterNew((PyObject *)mp);
         if (it == NULL) {
             return -1;
         }
         while(it->index < it->size) {
-            PyArray_Item_INCREF(it->dataptr, mp->descr);
+            PyArray_Item_INCREF(it->dataptr, PyArray_DESCR(mp));
             PyArray_ITER_NEXT(it);
         }
         Py_DECREF(it);
@@ -120,7 +120,7 @@ PyArray_INCREF(PyArrayObject *mp)
     }
 
     if (PyArray_ISONESEGMENT(mp)) {
-        data = (PyObject **)mp->data;
+        data = (PyObject **)PyArray_DATA(mp);
         n = PyArray_SIZE(mp);
         if (PyArray_ISALIGNED(mp)) {
             for (i = 0; i < n; i++, data++) {
@@ -156,21 +156,21 @@ PyArray_INCREF(PyArrayObject *mp)
 NPY_NO_EXPORT int
 PyArray_XDECREF(PyArrayObject *mp)
 {
-    intp i, n;
+    npy_intp i, n;
     PyObject **data;
     PyObject *temp;
     PyArrayIterObject *it;
 
-    if (!PyDataType_REFCHK(mp->descr)) {
+    if (!PyDataType_REFCHK(PyArray_DESCR(mp))) {
         return 0;
     }
-    if (mp->descr->type_num != PyArray_OBJECT) {
+    if (PyArray_DESCR(mp)->type_num != NPY_OBJECT) {
         it = (PyArrayIterObject *)PyArray_IterNew((PyObject *)mp);
         if (it == NULL) {
             return -1;
         }
         while(it->index < it->size) {
-            PyArray_Item_XDECREF(it->dataptr, mp->descr);
+            PyArray_Item_XDECREF(it->dataptr, PyArray_DESCR(mp));
             PyArray_ITER_NEXT(it);
         }
         Py_DECREF(it);
@@ -178,7 +178,7 @@ PyArray_XDECREF(PyArrayObject *mp)
     }
 
     if (PyArray_ISONESEGMENT(mp)) {
-        data = (PyObject **)mp->data;
+        data = (PyObject **)PyArray_DATA(mp);
         n = PyArray_SIZE(mp);
         if (PyArray_ISALIGNED(mp)) {
             for (i = 0; i < n; i++, data++) Py_XDECREF(*data);
@@ -211,11 +211,11 @@ PyArray_XDECREF(PyArrayObject *mp)
 NPY_NO_EXPORT void
 PyArray_FillObjectArray(PyArrayObject *arr, PyObject *obj)
 {
-    intp i,n;
+    npy_intp i,n;
     n = PyArray_SIZE(arr);
-    if (arr->descr->type_num == PyArray_OBJECT) {
+    if (PyArray_DESCR(arr)->type_num == NPY_OBJECT) {
         PyObject **optr;
-        optr = (PyObject **)(arr->data);
+        optr = (PyObject **)(PyArray_DATA(arr));
         n = PyArray_SIZE(arr);
         if (obj == NULL) {
             for (i = 0; i < n; i++) {
@@ -231,10 +231,10 @@ PyArray_FillObjectArray(PyArrayObject *arr, PyObject *obj)
     }
     else {
         char *optr;
-        optr = arr->data;
+        optr = PyArray_DATA(arr);
         for (i = 0; i < n; i++) {
-            _fillobject(optr, obj, arr->descr);
-            optr += arr->descr->elsize;
+            _fillobject(optr, obj, PyArray_DESCR(arr));
+            optr += PyArray_DESCR(arr)->elsize;
         }
     }
 }
@@ -258,7 +258,7 @@ _fillobject(char *optr, PyObject *obj, PyArray_Descr *dtype)
             Py_XDECREF(arr);
         }
     }
-    else if (PyDescr_HASFIELDS(dtype)) {
+    else if (PyDataType_HASFIELDS(dtype)) {
         PyObject *key, *value, *title = NULL;
         PyArray_Descr *new;
         int offset;
@@ -275,8 +275,12 @@ _fillobject(char *optr, PyObject *obj, PyArray_Descr *dtype)
         }
     }
     else {
-        Py_XINCREF(obj);
-        NPY_COPY_PYOBJECT_PTR(optr, &obj);
+        npy_intp i;
+        for (i = 0; i < dtype->elsize / sizeof(obj); i++) {
+            Py_XINCREF(obj);
+            NPY_COPY_PYOBJECT_PTR(optr, &obj);
+            optr += sizeof(obj);
+        }
         return;
     }
 }

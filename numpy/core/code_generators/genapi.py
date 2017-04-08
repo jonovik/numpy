@@ -4,7 +4,10 @@ Get API information encoded in C files.
 See ``find_function`` for how functions should be formatted, and
 ``read_order`` for how the order of the functions should be
 specified.
+
 """
+from __future__ import division, absolute_import, print_function
+
 import sys, os, re
 try:
     import hashlib
@@ -12,8 +15,7 @@ try:
 except ImportError:
     import md5
     md5new = md5.new
-if sys.version_info[:2] < (2, 6):
-    from sets import Set as set
+
 import textwrap
 
 from os.path import join
@@ -21,34 +23,45 @@ from os.path import join
 __docformat__ = 'restructuredtext'
 
 # The files under src/ that are scanned for API functions
-API_FILES = [join('multiarray', 'methods.c'),
+API_FILES = [join('multiarray', 'alloc.c'),
+             join('multiarray', 'array_assign_array.c'),
+             join('multiarray', 'array_assign_scalar.c'),
              join('multiarray', 'arrayobject.c'),
-             join('multiarray', 'flagsobject.c'),
-             join('multiarray', 'descriptor.c'),
-             join('multiarray', 'iterators.c'),
-             join('multiarray', 'getset.c'),
-             join('multiarray', 'number.c'),
-             join('multiarray', 'sequence.c'),
-             join('multiarray', 'ctors.c'),
-             join('multiarray', 'convert.c'),
-             join('multiarray', 'shape.c'),
-             join('multiarray', 'item_selection.c'),
-             join('multiarray', 'convert_datatype.c'),
              join('multiarray', 'arraytypes.c.src'),
+             join('multiarray', 'buffer.c'),
+             join('multiarray', 'calculation.c'),
+             join('multiarray', 'conversion_utils.c'),
+             join('multiarray', 'convert.c'),
+             join('multiarray', 'convert_datatype.c'),
+             join('multiarray', 'ctors.c'),
+             join('multiarray', 'datetime.c'),
+             join('multiarray', 'datetime_busday.c'),
+             join('multiarray', 'datetime_busdaycal.c'),
+             join('multiarray', 'datetime_strings.c'),
+             join('multiarray', 'descriptor.c'),
+             join('multiarray', 'einsum.c.src'),
+             join('multiarray', 'flagsobject.c'),
+             join('multiarray', 'getset.c'),
+             join('multiarray', 'item_selection.c'),
+             join('multiarray', 'iterators.c'),
+             join('multiarray', 'mapping.c'),
+             join('multiarray', 'methods.c'),
              join('multiarray', 'multiarraymodule.c'),
+             join('multiarray', 'nditer_api.c'),
+             join('multiarray', 'nditer_constr.c'),
+             join('multiarray', 'nditer_pywrap.c'),
+             join('multiarray', 'nditer_templ.c.src'),
+             join('multiarray', 'number.c'),
+             join('multiarray', 'refcount.c'),
              join('multiarray', 'scalartypes.c.src'),
              join('multiarray', 'scalarapi.c'),
-             join('multiarray', 'calculation.c'),
+             join('multiarray', 'sequence.c'),
+             join('multiarray', 'shape.c'),
              join('multiarray', 'usertypes.c'),
-             join('multiarray', 'refcount.c'),
-             join('multiarray', 'conversion_utils.c'),
-             join('multiarray', 'buffer.c'),
-             join('multiarray', 'datetime.c'),
-             join('multiarray', 'new_iterator.c.src'),
-             join('multiarray', 'new_iterator_pywrap.c'),
-             join('multiarray', 'einsum.c.src'),
-             join('umath', 'ufunc_object.c'),
              join('umath', 'loops.c.src'),
+             join('umath', 'ufunc_object.c'),
+             join('umath', 'ufunc_type_resolution.c'),
+             join('umath', 'reduction.c'),
             ]
 THIS_DIR = os.path.dirname(__file__)
 API_FILES = [os.path.join(THIS_DIR, '..', 'src', a) for a in API_FILES]
@@ -60,7 +73,30 @@ def remove_whitespace(s):
     return ''.join(s.split())
 
 def _repl(str):
-    return str.replace('Bool','npy_bool')
+    return str.replace('Bool', 'npy_bool')
+
+
+class StealRef:
+    def __init__(self, arg):
+        self.arg = arg # counting from 1
+
+    def __str__(self):
+        try:
+            return ' '.join('NPY_STEALS_REF_TO_ARG(%d)' % x for x in self.arg)
+        except TypeError:
+            return 'NPY_STEALS_REF_TO_ARG(%d)' % self.arg
+
+
+class NonNull:
+    def __init__(self, arg):
+        self.arg = arg # counting from 1
+
+    def __str__(self):
+        try:
+            return ' '.join('NPY_GCC_NONNULL(%d)' % x for x in self.arg)
+        except TypeError:
+            return 'NPY_GCC_NONNULL(%d)' % self.arg
+
 
 class Function(object):
     def __init__(self, name, return_type, args, doc=''):
@@ -190,7 +226,7 @@ def find_functions(filename, tag='API'):
     function_name = None
     function_args = []
     doclist = []
-    SCANNING, STATE_DOC, STATE_RETTYPE, STATE_NAME, STATE_ARGS = range(5)
+    SCANNING, STATE_DOC, STATE_RETTYPE, STATE_NAME, STATE_ARGS = list(range(5))
     state = SCANNING
     tagcomment = '/*' + tag
     for lineno, line in enumerate(fo):
@@ -241,7 +277,7 @@ def find_functions(filename, tag='API'):
                 else:
                     function_args.append(line)
         except:
-            print(filename, lineno+1)
+            print(filename, lineno + 1)
             raise
     fo.close()
     return functions
@@ -257,7 +293,7 @@ def should_rebuild(targets, source_files):
     return False
 
 # Those *Api classes instances know how to output strings for the generated code
-class TypeApi:
+class TypeApi(object):
     def __init__(self, name, index, ptr_cast, api_name):
         self.index = index
         self.name = name
@@ -275,15 +311,11 @@ class TypeApi:
 
     def internal_define(self):
         astr = """\
-#ifdef NPY_ENABLE_SEPARATE_COMPILATION
-    extern NPY_NO_EXPORT PyTypeObject %(type)s;
-#else
-    NPY_NO_EXPORT PyTypeObject %(type)s;
-#endif
+extern NPY_NO_EXPORT PyTypeObject %(type)s;
 """ % {'type': self.name}
         return astr
 
-class GlobalVarApi:
+class GlobalVarApi(object):
     def __init__(self, name, index, type, api_name):
         self.name = name
         self.index = index
@@ -301,17 +333,13 @@ class GlobalVarApi:
 
     def internal_define(self):
         astr = """\
-#ifdef NPY_ENABLE_SEPARATE_COMPILATION
-    extern NPY_NO_EXPORT %(type)s %(name)s;
-#else
-    NPY_NO_EXPORT %(type)s %(name)s;
-#endif
+extern NPY_NO_EXPORT %(type)s %(name)s;
 """ % {'type': self.type, 'name': self.name}
         return astr
 
 # Dummy to be able to consistently use *Api instances for all items in the
 # array api
-class BoolValuesApi:
+class BoolValuesApi(object):
     def __init__(self, name, index, api_name):
         self.name = name
         self.index = index
@@ -329,18 +357,15 @@ class BoolValuesApi:
 
     def internal_define(self):
         astr = """\
-#ifdef NPY_ENABLE_SEPARATE_COMPILATION
 extern NPY_NO_EXPORT PyBoolScalarObject _PyArrayScalar_BoolValues[2];
-#else
-NPY_NO_EXPORT PyBoolScalarObject _PyArrayScalar_BoolValues[2];
-#endif
 """
         return astr
 
-class FunctionApi:
-    def __init__(self, name, index, return_type, args, api_name):
+class FunctionApi(object):
+    def __init__(self, name, index, annotations, return_type, args, api_name):
         self.name = name
         self.index = index
+        self.annotations = annotations
         self.return_type = return_type
         self.args = args
         self.api_name = api_name
@@ -365,17 +390,21 @@ class FunctionApi:
         return "        (void *) %s" % self.name
 
     def internal_define(self):
+        annstr = []
+        for a in self.annotations:
+            annstr.append(str(a))
+        annstr = ' '.join(annstr)
         astr = """\
-NPY_NO_EXPORT %s %s \\\n       (%s);""" % (self.return_type,
-                                           self.name,
-                                           self._argtypes_string())
+NPY_NO_EXPORT %s %s %s \\\n       (%s);""" % (annstr, self.return_type,
+                                              self.name,
+                                              self._argtypes_string())
         return astr
 
 def order_dict(d):
     """Order dict by its values."""
-    o = d.items()
+    o = list(d.items())
     def _key(x):
-        return (x[1], x[0])
+        return x[1] + (x[0],)
     return sorted(o, key=_key)
 
 def merge_api_dicts(dicts):
@@ -407,7 +436,7 @@ Same index has been used twice in api definition: %s
         raise ValueError(msg)
 
     # No 'hole' in the indexes may be allowed, and it must starts at 0
-    indexes = set(d.values())
+    indexes = set(v[0] for v in d.values())
     expected = set(range(len(indexes)))
     if not indexes == expected:
         diff = expected.symmetric_difference(indexes)
@@ -422,7 +451,7 @@ def get_api_functions(tagname, api_dict):
         functions.extend(find_functions(f, tagname))
     dfunctions = []
     for func in functions:
-        o = api_dict[func.name]
+        o = api_dict[func.name][0]
         dfunctions.append( (o, func) )
     dfunctions.sort()
     return [a[1] for a in dfunctions]
@@ -432,19 +461,15 @@ def fullapi_hash(api_dicts):
     of the list of items in the API (as a string)."""
     a = []
     for d in api_dicts:
-        def sorted_by_values(d):
-            """Sort a dictionary by its values. Assume the dictionary items is of
-            the form func_name -> order"""
-            return sorted(d.items(), key=lambda x_y: (x_y[1], x_y[0]))
-        for name, index in sorted_by_values(d):
+        for name, data in order_dict(d):
             a.extend(name)
-            a.extend(str(index))
+            a.extend(','.join(map(str, data)))
 
     return md5new(''.join(a).encode('ascii')).hexdigest()
 
 # To parse strings like 'hex = checksum' where hex is e.g. 0x1234567F and
 # checksum a 128 bits md5 checksum (hex format as well)
-VERRE = re.compile('(^0x[\da-f]{8})\s*=\s*([\da-f]{32})')
+VERRE = re.compile(r'(^0x[\da-f]{8})\s*=\s*([\da-f]{32})')
 
 def get_versions_hash():
     d = []
@@ -452,7 +477,7 @@ def get_versions_hash():
     file = os.path.join(os.path.dirname(__file__), 'cversions.txt')
     fid = open(file, 'r')
     try:
-        for line in fid.readlines():
+        for line in fid:
             m = VERRE.match(line)
             if m:
                 d.append((int(m.group(1), 16), m.group(2)))
@@ -470,8 +495,8 @@ def main():
         print(func)
         ah = func.api_hash()
         m.update(ah)
-        print(hex(int(ah,16)))
-    print(hex(int(m.hexdigest()[:8],16)))
+        print(hex(int(ah, 16)))
+    print(hex(int(m.hexdigest()[:8], 16)))
 
 if __name__ == '__main__':
     main()

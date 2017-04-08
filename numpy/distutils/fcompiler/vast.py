@@ -1,3 +1,5 @@
+from __future__ import division, absolute_import, print_function
+
 import os
 
 from numpy.distutils.fcompiler.gnu import GnuFCompiler
@@ -8,8 +10,8 @@ class VastFCompiler(GnuFCompiler):
     compiler_type = 'vast'
     compiler_aliases = ()
     description = 'Pacific-Sierra Research Fortran 90 Compiler'
-    version_pattern = r'\s*Pacific-Sierra Research vf90 '\
-                      '(Personal|Professional)\s+(?P<version>[^\s]*)'
+    version_pattern = (r'\s*Pacific-Sierra Research vf90 '
+                       r'(Personal|Professional)\s+(?P<version>[^\s]*)')
 
     # VAST f90 does not support -o with -c. So, object files are created
     # to the current directory and then moved to build directory

@@ -3,10 +3,10 @@ C-API for NumPy
 ===============
 
 :Author:          Travis Oliphant
-:Discussions to:  `numpy-discussion@scipy.org`__
+:Discussions to:  `numpy-discussion@python.org`__
 :Created:         October 2005
 
-__ http://www.scipy.org/Mailing_Lists
+__ http://scipy.org/scipylib/mailing-lists.html
 
 The C API of NumPy is (mostly) backward compatible with Numeric.
 
@@ -15,7 +15,7 @@ of the API) that will need to be changed:
 
 * If you used any of the function pointers in the ``PyArray_Descr``
   structure you will have to modify your usage of those.  First,
-  the pointers are all under the member named ``f``.  So ``descr->cast`` 
+  the pointers are all under the member named ``f``.  So ``descr->cast``
   is now ``descr->f->cast``.  In addition, the
   casting functions have eliminated the strides argument (use
   ``PyArray_CastTo`` if you need strided casting). All functions have
@@ -62,7 +62,7 @@ This is a very flexible function.
 ``subtype`` : ``PyTypeObject *``
     The subtype that should be created (either pass in
     ``&PyArray_Type``,  or ``obj->ob_type``,
-    where ``obj`` is a an instance of a subtype (or subclass) of
+    where ``obj`` is an instance of a subtype (or subclass) of
     ``PyArray_Type``).
 
 ``descr`` : ``PyArray_Descr *``
@@ -71,7 +71,7 @@ This is a very flexible function.
     using ``PyArray_DescrFromType(<typenum>)``. If you want to use a
     flexible size array, then you need to use
     ``PyArray_DescrNewFromType(<flexible typenum>)`` and set its ``elsize``
-    paramter to the desired size. The typenum in both of these cases
+    parameter to the desired size. The typenum in both of these cases
     is one of the ``PyArray_XXXX`` enumerated types.
 
 ``nd`` : ``int``
@@ -120,7 +120,7 @@ This is a very flexible function.
     array of the type to be created (so the ``__array_finalize__`` method
     must handle an array argument. But, it can be anything...)
 
-Note: The returned array object will be unitialized unless the type is
+Note: The returned array object will be uninitialized unless the type is
 ``PyArray_OBJECT`` in which case the memory will be set to ``NULL``.
 
 ``PyArray_SimpleNew(nd, dims, typenum)`` is a drop-in replacement for
@@ -184,7 +184,7 @@ function calls still remain but they are loose wrappers around the
         not it is safe.
 
 ``context`` : ``PyObject *``
-    If the Python object ``op`` is not an numpy array, but has an
+    If the Python object ``op`` is not a numpy array, but has an
     ``__array__`` method, context is passed as the second argument to
     that method (the first is the typecode). Almost always this
     parameter is ``NULL``.
@@ -238,7 +238,7 @@ segfaults may result.
 There are 6 (binary) flags that describe the memory area used by the
 data buffer.  These constants are defined in ``arrayobject.h`` and
 determine the bit-position of the flag.  Python exposes a nice attribute-
-based interface as well as a dictionary-like interface for getting 
+based interface as well as a dictionary-like interface for getting
 (and, if appropriate, setting) these flags.
 
 Memory areas of all kinds can be pointed to by an ndarray, necessitating
@@ -254,7 +254,7 @@ PyArray_FromAny function.
 ``NPY_FORTRAN``
     True if the array is (Fortran-style) contiguous in memory.
 
-Notice that contiguous 1-d arrays are always both ``NPY_FORTRAN`` contiguous 
+Notice that contiguous 1-d arrays are always both ``NPY_FORTRAN`` contiguous
 and C contiguous. Both of these flags can be checked and are convenience
 flags only as whether or not an array is ``NPY_CONTIGUOUS`` or ``NPY_FORTRAN``
 can be determined by the ``strides``, ``dimensions``, and ``itemsize``

@@ -4,17 +4,19 @@ Statistics
 .. currentmodule:: numpy
 
 
-Extremal values
----------------
+Order statistics
+----------------
 
 .. autosummary::
    :toctree: generated/
 
    amin
    amax
-   nanmax
    nanmin
+   nanmax
    ptp
+   percentile
+   nanpercentile
 
 Averages and variances
 ----------------------
@@ -22,11 +24,15 @@ Averages and variances
 .. autosummary::
    :toctree: generated/
 
+   median
    average
    mean
-   median
    std
    var
+   nanmedian
+   nanmean
+   nanstd
+   nanvar
 
 Correlating
 -----------

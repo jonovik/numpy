@@ -32,7 +32,7 @@ of an array.
 .. index::
    single: array iterator
 
-Basic usage is to call :cfunc:`PyArray_IterNew` ( ``array`` ) where array
+Basic usage is to call :c:func:`PyArray_IterNew` ( ``array`` ) where array
 is an ndarray object (or one of its sub-classes). The returned object
 is an array-iterator object (the same object returned by the .flat
 attribute of the ndarray). This object is usually cast to
@@ -46,13 +46,13 @@ ndarray object.
 
 After processing data at the current element of the array, the next
 element of the array can be obtained using the macro
-:cfunc:`PyArray_ITER_NEXT` ( ``iter`` ). The iteration always proceeds in a
+:c:func:`PyArray_ITER_NEXT` ( ``iter`` ). The iteration always proceeds in a
 C-style contiguous fashion (last index varying the fastest). The
-:cfunc:`PyArray_ITER_GOTO` ( ``iter``, ``destination`` ) can be used to
+:c:func:`PyArray_ITER_GOTO` ( ``iter``, ``destination`` ) can be used to
 jump to a particular point in the array, where ``destination`` is an
 array of npy_intp data-type with space to handle at least the number
 of dimensions in the underlying array. Occasionally it is useful to
-use :cfunc:`PyArray_ITER_GOTO1D` ( ``iter``, ``index`` ) which will jump
+use :c:func:`PyArray_ITER_GOTO1D` ( ``iter``, ``index`` ) which will jump
 to the 1-d index given by the value of ``index``. The most common
 usage, however, is given in the following example.
 
@@ -69,8 +69,8 @@ usage, however, is given in the following example.
     }
     ...
 
-You can also use :cfunc:`PyArrayIter_Check` ( ``obj`` ) to ensure you have
-an iterator object and :cfunc:`PyArray_ITER_RESET` ( ``iter`` ) to reset an
+You can also use :c:func:`PyArrayIter_Check` ( ``obj`` ) to ensure you have
+an iterator object and :c:func:`PyArray_ITER_RESET` ( ``iter`` ) to reset an
 iterator object back to the beginning of the array.
 
 It should be emphasized at this point that you may not need the array
@@ -112,10 +112,10 @@ perform the inner loop over the dimension with the highest number of
 elements to take advantage of speed enhancements available on micro-
 processors that use pipelining to enhance fundmental operations.
 
-The :cfunc:`PyArray_IterAllButAxis` ( ``array``, ``&dim`` ) constructs an
+The :c:func:`PyArray_IterAllButAxis` ( ``array``, ``&dim`` ) constructs an
 iterator object that is modified so that it will not iterate over the
 dimension indicated by dim. The only restriction on this iterator
-object, is that the :cfunc:`PyArray_Iter_GOTO1D` ( ``it``, ``ind`` ) macro
+object, is that the :c:func:`PyArray_Iter_GOTO1D` ( ``it``, ``ind`` ) macro
 cannot be used (thus flat indexing won't work either if you pass this
 object back to Python --- so you shouldn't do this). Note that the
 returned object from this routine is still usually cast to
@@ -129,7 +129,7 @@ the dimension with the largest axis is found and used.
 Iterating over multiple arrays
 ------------------------------
 
-Very often, it is desireable to iterate over several arrays at the
+Very often, it is desirable to iterate over several arrays at the
 same time. The universal functions are an example of this kind of
 behavior. If all you want to do is iterate over arrays with the same
 shape, then simply creating several iterator objects is the standard
@@ -161,21 +161,21 @@ Broadcasting over multiple arrays
 
 When multiple arrays are involved in an operation, you may want to use the
 same broadcasting rules that the math operations (*i.e.* the ufuncs) use.
-This can be done easily using the :ctype:`PyArrayMultiIterObject`.  This is
+This can be done easily using the :c:type:`PyArrayMultiIterObject`.  This is
 the object returned from the Python command numpy.broadcast and it is almost
 as easy to use from C. The function
-:cfunc:`PyArray_MultiIterNew` ( ``n``, ``...`` ) is used (with ``n`` input
+:c:func:`PyArray_MultiIterNew` ( ``n``, ``...`` ) is used (with ``n`` input
 objects in place of ``...`` ). The input objects can be arrays or anything
 that can be converted into an array. A pointer to a PyArrayMultiIterObject is
 returned.  Broadcasting has already been accomplished which adjusts the
 iterators so that all that needs to be done to advance to the next element in
 each array is for PyArray_ITER_NEXT to be called for each of the inputs. This
 incrementing is automatically performed by
-:cfunc:`PyArray_MultiIter_NEXT` ( ``obj`` ) macro (which can handle a
-multiterator ``obj`` as either a :ctype:`PyArrayMultiObject *` or a
-:ctype:`PyObject *`). The data from input number ``i`` is available using
-:cfunc:`PyArray_MultiIter_DATA` ( ``obj``, ``i`` ) and the total (broadcasted)
-size as :cfunc:`PyArray_MultiIter_SIZE` ( ``obj``). An example of using this
+:c:func:`PyArray_MultiIter_NEXT` ( ``obj`` ) macro (which can handle a
+multiterator ``obj`` as either a :c:type:`PyArrayMultiObject *` or a
+:c:type:`PyObject *<PyObject>`). The data from input number ``i`` is available using
+:c:func:`PyArray_MultiIter_DATA` ( ``obj``, ``i`` ) and the total (broadcasted)
+size as :c:func:`PyArray_MultiIter_SIZE` ( ``obj``). An example of using this
 feature follows.
 
 .. code-block:: c
@@ -189,7 +189,7 @@ feature follows.
         PyArray_MultiIter_NEXT(mobj);
     }
 
-The function :cfunc:`PyArray_RemoveLargest` ( ``multi`` ) can be used to
+The function :c:func:`PyArray_RemoveSmallest` ( ``multi`` ) can be used to
 take a multi-iterator object and adjust all the iterators so that
 iteration does not take place over the largest dimension (it makes
 that dimension of size 1). The code being looped over that makes use
@@ -203,186 +203,6 @@ multi->iters[i]->strides.
 There are several examples of using the multi-iterator in the NumPy
 source code as it makes N-dimensional broadcasting-code very simple to
 write. Browse the source for more examples.
-
-.. _`sec:Creating-a-new`:
-
-Creating a new universal function
-=================================
-
-.. index::
-   pair: ufunc; adding new
-
-The umath module is a computer-generated C-module that creates many
-ufuncs. It provides a great many examples of how to create a universal
-function. Creating your own ufunc that will make use of the ufunc
-machinery is not difficult either. Suppose you have a function that
-you want to operate element-by-element over its inputs. By creating a
-new ufunc you will obtain a function that handles
-
-- broadcasting
-
-- N-dimensional looping
-
-- automatic type-conversions with minimal memory usage
-
-- optional output arrays
-
-It is not difficult to create your own ufunc. All that is required is
-a 1-d loop for each data-type you want to support. Each 1-d loop must
-have a specific signature, and only ufuncs for fixed-size data-types
-can be used. The function call used to create a new ufunc to work on
-built-in data-types is given below. A different mechanism is used to
-register ufuncs for user-defined data-types.
-
-.. cfunction:: PyObject *PyUFunc_FromFuncAndData( PyUFuncGenericFunction* func,
-   void** data, char* types, int ntypes, int nin, int nout, int identity,
-   char* name, char* doc, int check_return)
-
-    *func*
-
-        A pointer to an array of 1-d functions to use. This array must be at
-        least ntypes long. Each entry in the array must be a
-        ``PyUFuncGenericFunction`` function. This function has the following
-        signature. An example of a valid 1d loop function is also given.
-
-        .. cfunction:: void loop1d(char** args, npy_intp* dimensions,
-           npy_intp* steps, void* data)
-
-        *args*
-
-            An array of pointers to the actual data for the input and output
-            arrays. The input arguments are given first followed by the output
-            arguments.
-
-        *dimensions*
-
-            A pointer to the size of the dimension over which this function is
-            looping.
-
-        *steps*
-
-            A pointer to the number of bytes to jump to get to the
-            next element in this dimension for each of the input and
-            output arguments.
-
-        *data*
-
-            Arbitrary data (extra arguments, function names, *etc.* )
-            that can be stored with the ufunc and will be passed in
-            when it is called.
-
-        .. code-block:: c
-
-            static void
-            double_add(char *args, npy_intp *dimensions, npy_intp *steps,
-               void *extra)
-            {
-                npy_intp i;
-                npy_intp is1=steps[0], is2=steps[1];
-                npy_intp os=steps[2], n=dimensions[0];
-                char *i1=args[0], *i2=args[1], *op=args[2];
-                for (i=0; i<n; i++) {
-                    *((double *)op) = *((double *)i1) + \
-                                      *((double *)i2);
-                    i1 += is1; i2 += is2; op += os;
-                 }
-            }
-
-    *data*
-
-        An array of data. There should be ntypes entries (or NULL) --- one for
-        every loop function defined for this ufunc. This data will be passed
-        in to the 1-d loop. One common use of this data variable is to pass in
-        an actual function to call to compute the result when a generic 1-d
-        loop (e.g. :cfunc:`PyUFunc_d_d`) is being used.
-
-    *types*
-
-        An array of type-number signatures (type ``char`` ). This
-        array should be of size (nin+nout)*ntypes and contain the
-        data-types for the corresponding 1-d loop. The inputs should
-        be first followed by the outputs. For example, suppose I have
-        a ufunc that supports 1 integer and 1 double 1-d loop
-        (length-2 func and data arrays) that takes 2 inputs and
-        returns 1 output that is always a complex double, then the
-        types array would be
-
-
-        The bit-width names can also be used (e.g. :cdata:`NPY_INT32`,
-        :cdata:`NPY_COMPLEX128` ) if desired.
-
-    *ntypes*
-
-        The number of data-types supported. This is equal to the number of 1-d
-        loops provided.
-
-    *nin*
-
-        The number of input arguments.
-
-    *nout*
-
-        The number of output arguments.
-
-    *identity*
-
-        Either :cdata:`PyUFunc_One`, :cdata:`PyUFunc_Zero`,
-        :cdata:`PyUFunc_None`. This specifies what should be returned when
-        an empty array is passed to the reduce method of the ufunc.
-
-    *name*
-
-        A ``NULL`` -terminated string providing the name of this ufunc
-        (should be the Python name it will be called).
-
-    *doc*
-
-        A documentation string for this ufunc (will be used in generating the
-        response to ``{ufunc_name}.__doc__``). Do not include the function
-        signature or the name as this is generated automatically.
-
-    *check_return*
-
-        Not presently used, but this integer value does get set in the
-        structure-member of similar name.
-
-    .. index::
-       pair: ufunc; adding new
-
-    The returned ufunc object is a callable Python object. It should be
-    placed in a (module) dictionary under the same name as was used in the
-    name argument to the ufunc-creation routine. The following example is
-    adapted from the umath module
-
-    .. code-block:: c
-
-        static PyUFuncGenericFunction atan2_functions[]=\
-            {PyUFunc_ff_f, PyUFunc_dd_d,
-             PyUFunc_gg_g, PyUFunc_OO_O_method};
-        static void* atan2_data[]=\
-            {(void *)atan2f,(void *) atan2,
-             (void *)atan2l,(void *)"arctan2"};
-        static char atan2_signatures[]=\
-            {NPY_FLOAT, NPY_FLOAT, NPY_FLOAT,
-             NPY_DOUBLE, NPY_DOUBLE,
-             NPY_DOUBLE, NPY_LONGDOUBLE,
-             NPY_LONGDOUBLE, NPY_LONGDOUBLE
-             NPY_OBJECT, NPY_OBJECT,
-             NPY_OBJECT};
-        ...
-        /* in the module initialization code */
-        PyObject *f, *dict, *module;
-        ...
-        dict = PyModule_GetDict(module);
-        ...
-        f = PyUFunc_FromFuncAndData(atan2_functions,
-            atan2_data, atan2_signatures, 4, 2, 1,
-            PyUFunc_None, "arctan2",
-            "a safe and correct arctan(x1/x2)", 0);
-        PyDict_SetItemString(dict, "arctan2", f);
-        Py_DECREF(f);
-        ...
-
 
 .. _user.user-defined-data-types:
 
@@ -434,23 +254,23 @@ type. For example, a suitable structure for the new Python type is:
     } PySomeDataTypeObject;
 
 After you have defined a new Python type object, you must then define
-a new :ctype:`PyArray_Descr` structure whose typeobject member will contain a
+a new :c:type:`PyArray_Descr` structure whose typeobject member will contain a
 pointer to the data-type you've just defined. In addition, the
 required functions in the ".f" member must be defined: nonzero,
 copyswap, copyswapn, setitem, getitem, and cast. The more functions in
 the ".f" member you define, however, the more useful the new data-type
-will be.  It is very important to intialize unused functions to NULL.
-This can be achieved using :cfunc:`PyArray_InitArrFuncs` (f).
+will be.  It is very important to initialize unused functions to NULL.
+This can be achieved using :c:func:`PyArray_InitArrFuncs` (f).
 
-Once a new :ctype:`PyArray_Descr` structure is created and filled with the
+Once a new :c:type:`PyArray_Descr` structure is created and filled with the
 needed information and useful functions you call
-:cfunc:`PyArray_RegisterDataType` (new_descr). The return value from this
+:c:func:`PyArray_RegisterDataType` (new_descr). The return value from this
 call is an integer providing you with a unique type_number that
 specifies your data-type. This type number should be stored and made
 available by your module so that other modules can use it to recognize
 your data-type (the other mechanism for finding a user-defined
 data-type number is to search based on the name of the type-object
-associated with the data-type using :cfunc:`PyArray_TypeNumFromName` ).
+associated with the data-type using :c:func:`PyArray_TypeNumFromName` ).
 
 
 Registering a casting function
@@ -464,8 +284,8 @@ functions for each conversion you want to support and then registering
 these functions with the data-type descriptor. A low-level casting
 function has the signature.
 
-.. cfunction:: void castfunc( void* from, void* to, npy_intp n, void* fromarr,
-   void* toarr)
+.. c:function:: void castfunc( \
+        void* from, void* to, npy_intp n, void* fromarr, void* toarr)
 
     Cast ``n`` elements ``from`` one type ``to`` another. The data to
     cast from is in a contiguous, correctly-swapped and aligned chunk
@@ -505,12 +325,12 @@ not presumed to be safely castable to user-defined data-types. This
 situation limits the ability of user-defined data-types to participate
 in the coercion system used by ufuncs and other times when automatic
 coercion takes place in NumPy. This can be changed by registering
-data-types as safely castable from a particlar data-type object. The
-function :cfunc:`PyArray_RegisterCanCast` (from_descr, totype_number,
+data-types as safely castable from a particular data-type object. The
+function :c:func:`PyArray_RegisterCanCast` (from_descr, totype_number,
 scalarkind) should be used to specify that the data-type object
 from_descr can be cast to the data-type with type number
 totype_number. If you are not trying to alter scalar coercion rules,
-then use :cdata:`PyArray_NOSCALAR` for the scalarkind argument.
+then use :c:data:`NPY_NOSCALAR` for the scalarkind argument.
 
 If you want to allow your new data-type to also be able to share in
 the scalar coercion rules, then you need to specify the scalarkind
@@ -520,7 +340,7 @@ available to that function). Then, you can register data-types that
 can be cast to separately for each scalar kind that may be returned
 from your user-defined data-type. If you don't register scalar
 coercion handling, then all of your user-defined data-types will be
-seen as :cdata:`PyArray_NOSCALAR`.
+seen as :c:data:`NPY_NOSCALAR`.
 
 
 Registering a ufunc loop
@@ -533,13 +353,14 @@ signature, silently replaces any previously registered loops for that
 data-type.
 
 Before you can register a 1-d loop for a ufunc, the ufunc must be
-previously created. Then you call :cfunc:`PyUFunc_RegisterLoopForType`
+previously created. Then you call :c:func:`PyUFunc_RegisterLoopForType`
 (...) with the information needed for the loop. The return value of
 this function is ``0`` if the process was successful and ``-1`` with
 an error condition set if it was not successful.
 
-.. cfunction:: int PyUFunc_RegisterLoopForType( PyUFuncObject* ufunc,
-   int usertype, PyUFuncGenericFunction function, int* arg_types, void* data)
+.. c:function:: int PyUFunc_RegisterLoopForType( \
+        PyUFuncObject* ufunc, int usertype, PyUFuncGenericFunction function, \
+        int* arg_types, void* data)
 
     *ufunc*
 
@@ -584,7 +405,7 @@ with regards to memory management. Sub-typing in C is not difficult
 even if you have only a rudimentary understanding of how to create new
 types for Python. While it is easiest to sub-type from a single parent
 type, sub-typing from multiple parent types is also possible. Multiple
-inheritence in C is generally less useful than it is in Python because
+inheritance in C is generally less useful than it is in Python because
 a restriction on Python sub-types is that they have a binary
 compatible memory layout. Perhaps for this reason, it is somewhat
 easier to sub-type from a single parent type.
@@ -593,7 +414,7 @@ easier to sub-type from a single parent type.
    pair: ndarray; subtyping
 
 All C-structures corresponding to Python objects must begin with
-:cmacro:`PyObject_HEAD` (or :cmacro:`PyObject_VAR_HEAD`). In the same
+:c:macro:`PyObject_HEAD` (or :c:macro:`PyObject_VAR_HEAD`). In the same
 way, any sub-type must have a C-structure that begins with exactly the
 same memory layout as the parent type (or all of the parent types in
 the case of multiple-inheritance). The reason for this is that Python
@@ -604,27 +425,27 @@ members). If the memory layouts are not compatible, then this attempt
 will cause unpredictable behavior (eventually leading to a memory
 violation and program crash).
 
-One of the elements in :cmacro:`PyObject_HEAD` is a pointer to a
+One of the elements in :c:macro:`PyObject_HEAD` is a pointer to a
 type-object structure. A new Python type is created by creating a new
 type-object structure and populating it with functions and pointers to
 describe the desired behavior of the type. Typically, a new
 C-structure is also created to contain the instance-specific
 information needed for each object of the type as well. For example,
-:cdata:`&PyArray_Type` is a pointer to the type-object table for the ndarray
-while a :ctype:`PyArrayObject *` variable is a pointer to a particular instance
+:c:data:`&PyArray_Type<PyArray_Type>` is a pointer to the type-object table for the ndarray
+while a :c:type:`PyArrayObject *` variable is a pointer to a particular instance
 of an ndarray (one of the members of the ndarray structure is, in
-turn, a pointer to the type- object table :cdata:`&PyArray_Type`). Finally
-:cfunc:`PyType_Ready` (<pointer_to_type_object>) must be called for
+turn, a pointer to the type- object table :c:data:`&PyArray_Type<PyArray_Type>`). Finally
+:c:func:`PyType_Ready` (<pointer_to_type_object>) must be called for
 every new Python type.
 
 
 Creating sub-types
 ------------------
 
-To create a sub-type, a similar proceedure must be followed except
+To create a sub-type, a similar procedure must be followed except
 only behaviors that are different require new entries in the type-
-object structure. All other entires can be NULL and will be filled in
-by :cfunc:`PyType_Ready` with appropriate functions from the parent
+object structure. All other entries can be NULL and will be filled in
+by :c:func:`PyType_Ready` with appropriate functions from the parent
 type(s). In particular, to create a sub-type in C follow these steps:
 
 1. If needed create a new C-structure to handle each instance of your
@@ -653,7 +474,7 @@ type(s). In particular, to create a sub-type in C follow these steps:
    Remember, all parent-types must have the same C-structure for multiple
    inheritance to work properly.
 
-4. Call :cfunc:`PyType_Ready` (<pointer_to_new_type>). If this function
+4. Call :c:func:`PyType_Ready` (<pointer_to_new_type>). If this function
    returns a negative number, a failure occurred and the type is not
    initialized. Otherwise, the type is ready to be used. It is
    generally important to place a reference to the new type into the
@@ -680,13 +501,13 @@ The __array_finalize\__ method
    sub-type is created in such a fashion, however, neither the
    __new_\_ method nor the __init\__ method gets called. Instead, the
    sub-type is allocated and the appropriate instance-structure
-   members are filled in. Finally, the :obj:`__array_finalize__`
+   members are filled in. Finally, the :obj:`~numpy.class.__array_finalize__`
    attribute is looked-up in the object dictionary. If it is present
    and not None, then it can be either a CObject containing a pointer
-   to a :cfunc:`PyArray_FinalizeFunc` or it can be a method taking a
+   to a :c:func:`PyArray_FinalizeFunc` or it can be a method taking a
    single argument (which could be None).
 
-   If the :obj:`__array_finalize__` attribute is a CObject, then the pointer
+   If the :obj:`~numpy.class.__array_finalize__` attribute is a CObject, then the pointer
    must be a pointer to a function with the signature:
 
    .. code-block:: c
@@ -699,7 +520,7 @@ The __array_finalize\__ method
    is present). This routine can do anything it wants to. It should
    return a -1 on error and 0 otherwise.
 
-   If the :obj:`__array_finalize__` attribute is not None nor a CObject,
+   If the :obj:`~numpy.class.__array_finalize__` attribute is not None nor a CObject,
    then it must be a Python method that takes the parent array as an
    argument (which could be None if there is no parent), and returns
    nothing. Errors in this method will be caught and handled.
@@ -713,14 +534,14 @@ The __array_priority\__ attribute
    This attribute allows simple but flexible determination of which sub-
    type should be considered "primary" when an operation involving two or
    more sub-types arises. In operations where different sub-types are
-   being used, the sub-type with the largest :obj:`__array_priority__`
+   being used, the sub-type with the largest :obj:`~numpy.class.__array_priority__`
    attribute will determine the sub-type of the output(s). If two sub-
-   types have the same :obj:`__array_priority__` then the sub-type of the
+   types have the same :obj:`~numpy.class.__array_priority__` then the sub-type of the
    first argument determines the output. The default
-   :obj:`__array_priority__` attribute returns a value of 0.0 for the base
+   :obj:`~numpy.class.__array_priority__` attribute returns a value of 0.0 for the base
    ndarray type and 1.0 for a sub-type. This attribute can also be
    defined by objects that are not sub-types of the ndarray and can be
-   used to determine which :obj:`__array_wrap__` method should be called for
+   used to determine which :obj:`~numpy.class.__array_wrap__` method should be called for
    the return output.
 
 The __array_wrap\__ method
@@ -730,11 +551,11 @@ The __array_wrap\__ method
 
    Any class or type can define this method which should take an ndarray
    argument and return an instance of the type. It can be seen as the
-   opposite of the :obj:`__array__` method. This method is used by the
+   opposite of the :obj:`~numpy.class.__array__` method. This method is used by the
    ufuncs (and other NumPy functions) to allow other objects to pass
    through. For Python >2.4, it can also be used to write a decorator
    that converts a function that works only with ndarrays to one that
-   works with any type with :obj:`__array__` and :obj:`__array_wrap__` methods.
+   works with any type with :obj:`~numpy.class.__array__` and :obj:`~numpy.class.__array_wrap__` methods.
 
 .. index::
    pair: ndarray; subtyping

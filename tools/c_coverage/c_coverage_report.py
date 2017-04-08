@@ -2,7 +2,9 @@
 """
 A script to create C code-coverage reports based on the output of
 valgrind's callgrind tool.
+
 """
+from __future__ import division, absolute_import, print_function
 
 import optparse
 import os
@@ -19,7 +21,7 @@ try:
     from pygments.formatters import HtmlFormatter
     has_pygments = True
 except ImportError:
-    print "This script requires pygments 0.11 or greater to generate HTML"
+    print("This script requires pygments 0.11 or greater to generate HTML")
     has_pygments = False
 
 
@@ -56,7 +58,7 @@ class SourceFile:
 
     def write_text(self, fd):
         source = open(self.path, "r")
-        for i, line in enumerate(source.readlines()):
+        for i, line in enumerate(source):
             if i + 1 in self.lines:
                 fd.write("> ")
             else:
@@ -92,7 +94,7 @@ class SourceFiles:
 
     def clean_path(self, path):
         path = path[len(self.prefix):]
-        return re.sub("[^A-Za-z0-9\.]", '_', path)
+        return re.sub(r"[^A-Za-z0-9\.]", '_', path)
 
     def write_text(self, root):
         for path, source in self.files.items():
@@ -108,8 +110,7 @@ class SourceFiles:
 
         fd = open(os.path.join(root, 'index.html'), 'w')
         fd.write("<html>")
-        paths = self.files.keys()
-        paths.sort()
+        paths = sorted(self.files.keys())
         for path in paths:
             fd.write('<p><a href="%s.html">%s</a></p>' %
                      (self.clean_path(path), escape(path[len(self.prefix):])))
@@ -120,13 +121,13 @@ class SourceFiles:
 def collect_stats(files, fd, pattern):
     # TODO: Handle compressed callgrind files
     line_regexs = [
-        re.compile("(?P<lineno>[0-9]+)(\s[0-9]+)+"),
-        re.compile("((jump)|(jcnd))=([0-9]+)\s(?P<lineno>[0-9]+)")
+        re.compile(r"(?P<lineno>[0-9]+)(\s[0-9]+)+"),
+        re.compile(r"((jump)|(jcnd))=([0-9]+)\s(?P<lineno>[0-9]+)")
         ]
 
     current_file = None
     current_function = None
-    for i, line in enumerate(fd.readlines()):
+    for i, line in enumerate(fd):
         if re.match("f[lie]=.+", line):
             path = line.split('=', 2)[1].strip()
             if os.path.exists(path) and re.search(pattern, path):
@@ -177,6 +178,6 @@ if __name__ == '__main__':
         files.write_text(options.directory)
     if 'html' in formats:
         if not has_pygments:
-            print "Pygments 0.11 or later is required to generate HTML"
+            print("Pygments 0.11 or later is required to generate HTML")
             sys.exit(1)
         files.write_html(options.directory)

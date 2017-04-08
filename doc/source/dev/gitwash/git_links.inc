@@ -8,36 +8,6 @@
    __not_case_sensitive__, so only one target definition is needed for
    nipy, NIPY, Nipy, etc...
 
-.. PROJECTNAME placeholders
-.. _PROJECTNAME: http://neuroimaging.scipy.org
-.. _`PROJECTNAME github`: http://github.com/nipy
-.. _`PROJECTNAME mailing list`: http://projects.scipy.org/mailman/listinfo/nipy-devel
-
-.. nipy
-.. _nipy: http://nipy.org/nipy
-.. _`nipy github`: http://github.com/nipy/nipy
-.. _`nipy mailing list`: http://mail.scipy.org/mailman/listinfo/nipy-devel
-
-.. ipython
-.. _ipython: http://ipython.scipy.org
-.. _`ipython github`: http://github.com/ipython/ipython
-.. _`ipython mailing list`: http://mail.scipy.org/mailman/listinfo/IPython-dev
-
-.. dipy
-.. _dipy: http://nipy.org/dipy
-.. _`dipy github`: http://github.com/Garyfallidis/dipy
-.. _`dipy mailing list`: http://mail.scipy.org/mailman/listinfo/nipy-devel
-
-.. nibabel
-.. _nibabel: http://nipy.org/nibabel
-.. _`nibabel github`: http://github.com/nipy/nibabel
-.. _`nibabel mailing list`: http://mail.scipy.org/mailman/listinfo/nipy-devel
-
-.. marsbar
-.. _marsbar: http://marsbar.sourceforge.net
-.. _`marsbar github`: http://github.com/matthew-brett/marsbar
-.. _`MarsBaR mailing list`: https://lists.sourceforge.net/lists/listinfo/marsbar-users
-
 .. git stuff
 .. _git: http://git-scm.com/
 .. _github: http://github.com
@@ -75,11 +45,21 @@
 .. _tangled working copy problem: http://tomayko.com/writings/the-thing-about-git 
 .. _git management: http://kerneltrap.org/Linux/Git_Management
 .. _linux git workflow: http://www.mail-archive.com/dri-devel@lists.sourceforge.net/msg39091.html
+.. _ipython git workflow: http://mail.python.org/pipermail/ipython-dev/2010-October/006746.html
 .. _git parable: http://tom.preston-werner.com/2009/05/19/the-git-parable.html
 .. _git foundation: http://matthew-brett.github.com/pydagogue/foundation.html
+.. _numpy/master: https://github.com/numpy/numpy
+.. _git cherry-pick: https://www.kernel.org/pub/software/scm/git/docs/git-cherry-pick.html
+.. _git blame: https://www.kernel.org/pub/software/scm/git/docs/git-blame.html
+.. _this blog post: http://github.com/blog/612-introducing-github-compare-view 
+.. _this article on merging conflicts:  http://git-scm.com/book/en/Git-Branching-Basic-Branching-and-Merging#Basic-Merge-Conflicts 
+.. _learn git: https://www.atlassian.com/git/tutorials/
+.. _filing pull requests: https://help.github.com/articles/using-pull-requests/#initiating-the-pull-request
+.. _pull request review: https://help.github.com/articles/using-pull-requests/#reviewing-the-pull-request
+
 
 .. other stuff
 .. _python: http://www.python.org
-.. _NumPy: http://numpy.scipy.org
+.. _NumPy: http://www.numpy.org
 .. _`NumPy github`: http://github.com/numpy/numpy
 .. _`NumPy mailing list`: http://scipy.org/Mailing_Lists
